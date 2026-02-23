@@ -13,7 +13,7 @@ int main()
     float quat[4] { 1., 0., 0., 0. };
 
     // Path to output the image (for now). Want to create a "real-time" view later on.
-    std::string output_image_path { "/media/mh2001/SSD2/Programming/General_Relativity/Geodesic_Raytracer/output_images/GPU_test.jpg" }
+    std::string output_image_path { "/media/mh2001/SSD2/Programming/General_Relativity/Geodesic_Raytracer/output_images/GPU_test.jpg" };
 
     return 0;
 }
