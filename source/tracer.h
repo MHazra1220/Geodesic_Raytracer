@@ -21,6 +21,8 @@ class Tracer
         int sky_pixels[2];
         // Use float versions when sampling from the sky map.
         float sky_pixels_f[2];
+
+        // Private class functions.
 };
 
 #endif
