@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
 project(
     Geodesic_Raytracer
     VERSION 1.0
-    LANGUAGES CXX CUDA
+    LANGUAGES CUDA
 )
 
 set (CMAKE_CXX_STANDARD_REQUIRED 23)

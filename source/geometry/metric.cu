@@ -2,31 +2,20 @@
 
 // Stores the calculated independent components in g.
 // Flat/Minkowski spacetime; same everywhere.
-__host__ __device__ void Metric::calculateMetric(float r[4], float g[4][4])
+__device__ void Metric::calculateMetric(float r[4], float g[4][4])
 {
-    g[0][0] = -1.;
-    #pragma unroll
-    for (int i { 1 }; i < 4; i++)
-    {
-        for (int j { i }; j < 4; j++)
-        {
-            if (i == j)
-            {
-                g[i][j] = -1.;
-            }
-            else
-            {
-                g[i][j] = 0.;
-                g[j][i] = 0.;
-            }
-        }
-    }
+    g[0][0] = -1.; g[0][1] = 0.; g[0][2] = 0.; g[0][3] = 0.;
+    g[1][0] = 0.; g[1][1] = 1.; g[1][2] = 0.; g[0][3] = 0.;
+    g[2][0] = 0.; g[2][1] = 0.; g[2][2] = 1.; g[2][3] = 0.;
+    g[3][0] = 0.; g[3][1] = 0.; g[3][2] = 0.; g[3][3] = 1.;
 }
 
-// Returns whether to terminate a photon passing going through this metric.
-__host__ __device__ bool Metric::terminateRay(float r[4]){
-    // Flat spacetime has no obvious termination condition; just return true for now.
-    return true;
+// Returns whether to terminate a photon passing through a point in this metric.
+__device__ bool Metric::terminateRay(float r[4]){
+    // Flat spacetime has no obvious termination condition.
+    // Currently just measures whether the ray is beyond some radius.
+    float radius { norm3df(r[1], r[2], r[3]) };
+    return radius < 10.;
 }
 
 // Calculates the scalar product of a velocity in some metric.
@@ -35,7 +24,6 @@ __host__ __device__ bool Metric::terminateRay(float r[4]){
 __host__ __device__ float scalarProduct(float v[4], float g[4][4])
 {
     float result { 0. };
-    #pragma unroll
     for (int i { 0 }; i < 4; i++)
     {
         float intermediate { 0. };
