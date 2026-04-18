@@ -11,7 +11,9 @@ int main()
     // A quaternion of (1, 0, 0, 0) is the "null" quaternion and aligns the camera with the xyz axes (angle = 0).
     float pos[4] { 0., -20., 0., 0. };
     float quat[4] { 1., 0., 0., 0. };
-    Tracer tracer_test { pos, quat, sky_map };
+    int cam_pixels[2] { 1920, 1080 };
+    float cam_fov { 90. };
+    Tracer tracer_test { pos, quat, cam_pixels, cam_fov, sky_map };
 
     // Path to output the image (for now). Want to create a "real-time" view later on.
     char output_image_path[] { "/media/mh2001/SSD2/Programming/General_Relativity/Geodesic_Raytracer/output_images/GPU_test.jpg" };
