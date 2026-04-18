@@ -26,10 +26,8 @@ Tracer::Tracer(float initial_pos[4], float initial_quat[4], int cam_pixels[2], f
     checkCudaError(err, std::string("Error: failed to allocate memory for d_phi on device."));
     err = cudaMalloc((void**)&d_d_theta, sizeof(float));
     checkCudaError(err, std::string("Error: failed to allocate memory for d_theta on device."));
-    err = cudaMalloc((void**)&d_pos, sizeof(float)*4);
-    checkCudaError(err, std::string("Error: failed to allocate memory for d_pos on device."));
-    err = cudaMalloc((void**)&d_quat, sizeof(float)*4);
-    checkCudaError(err, std::string("Error: failed to allocate memory for d_quat on device."));
+    err = cudaMalloc((void**)&d_cam_coords, sizeof(float)*8);
+    checkCudaError(err, std::string("Error: failed to allocate memory for d_cam_coords on device."));
     err = cudaMalloc((void**)&d_sky_pixels, 2*sizeof(int));
     checkCudaError(err, std::string("Error: failed to allocate memory for d_sky_pixels on device."));
     err = cudaMalloc((void**)&d_sky_pixels_f, 2*sizeof(float));
@@ -52,8 +50,7 @@ Tracer::~Tracer()
     cudaFree(d_sky_map);
     cudaFree(d_d_phi);
     cudaFree(d_d_theta);
-    cudaFree(d_pos);
-    cudaFree(d_quat);
+    cudaFree(d_cam_coords);
     cudaFree(d_cam_pixels);
     cudaFree(d_cam_pixel_array);
     cudaFree(d_cam_fov_conv_factor);
@@ -63,15 +60,13 @@ void Tracer::setCameraCoords(float camera_pos[4], float camera_quat[4])
 {
     for (int i { 0 }; i < 4; i++)
     {
-        h_pos[i] = camera_pos[i];
-        h_quat[i] = camera_quat[i];
+        h_cam_coords[i] = camera_pos[i];
+        h_cam_coords[4+i] = camera_quat[i];
     }
     // Copy to device.
     cudaError_t err { cudaSuccess };
-    err = cudaMemcpy(d_pos, &h_pos[0], 4*sizeof(float), cudaMemcpyHostToDevice);
-    checkCudaError(err, std::string("Error: failed to copy camera position to device."));
-    err = cudaMemcpy(d_quat, &h_quat[0], 4*sizeof(float), cudaMemcpyHostToDevice);
-    checkCudaError(err, std::string("Error: failed to copy camera quaternion to device."));
+    err = cudaMemcpy(d_cam_coords, &h_cam_coords[0], 8*sizeof(float), cudaMemcpyHostToDevice);
+    checkCudaError(err, std::string("Error: failed to copy camera coordinates to device."));
 }
 
 void Tracer::setCameraResFOV(int cam_pixels[2], float fov_width)
@@ -124,10 +119,11 @@ __device__ void Tracer::calculateStartV(float x, float y, float g[4][4], float v
     float theta { (y - 0.5f*d_cam_pixels[1]) * (*d_cam_fov_conv_factor) + 0.5f*pi_device };
     // Minkowski/Cartesian coordinates.
     float unrotated_v[4];
-    unrotated_v[0] = d_pos[0];
+    unrotated_v[0] = d_cam_coords[0];
     unrotated_v[1] = sin(theta)*cos(phi);
     unrotated_v[2] = sin(theta)*sin(phi);
     unrotated_v[3] = cos(theta);
+    float* d_quat { &d_cam_coords[4] };
     // Rotate to align with the camera's orientation in the global frame.
     rotateVecByQuat(unrotated_v, d_quat, v);
 }

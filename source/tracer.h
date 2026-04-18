@@ -38,11 +38,10 @@ class Tracer
         // These have to be pointers, even though they only store a single number each.
         float* d_d_phi { nullptr };
         float* d_d_theta { nullptr };
-        // Camera location and orientation.
-        float h_pos[4];
-        float h_quat[4];
-        float* d_pos;
-        float* d_quat;
+        // Camera location and orientation stored together for faster transfer.
+        // For a "real-time" view later on, these need to be transferred constantly to the device.
+        float h_cam_coords[8];
+        float* d_cam_coords;
         // Camera dimensions.
         int* d_cam_pixels { nullptr };
         unsigned char* d_cam_pixel_array { nullptr };
