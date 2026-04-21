@@ -1,8 +1,6 @@
-add_library(Tracer tracer.h tracer.cu)
+set(GEOMETRY_DIR "geometry")
 
-add_library(Quaternion quaternion.h quaternion.cu)
-target_link_libraries(Tracer PRIVATE Quaternion)
+add_library(Tracer tracer.cu)
 
-set (GEOMETRY_DIR "geometry")
 add_subdirectory(${GEOMETRY_DIR})
 target_link_libraries(Tracer PRIVATE Metric)

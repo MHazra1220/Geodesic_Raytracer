@@ -6,13 +6,14 @@ project(
     LANGUAGES CUDA
 )
 
-set (CMAKE_CXX_STANDARD_REQUIRED 23)
-set (CMAKE_CUDA_STANDARD_REQUIRED 12)
+set(CMAKE_CXX_STANDARD_REQUIRED 23)
+set(CMAKE_CUDA_STANDARD_REQUIRED 13)
 
 find_package(CUDAToolkit REQUIRED)
+# set(CUDA_NVCC_FLAGS -dc)
 
-set (SOURCE_DIR "source")
-set (UI_DIR "ui")
+set(SOURCE_DIR "source")
+set(UI_DIR "ui")
 
 add_executable(main.sh main.cu)
 target_compile_options(main.sh PRIVATE "-O1")

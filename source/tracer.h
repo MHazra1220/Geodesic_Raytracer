@@ -1,6 +1,8 @@
 #ifndef TRACER
 #define TRACER
 
+#include "geometry/metric.h"
+
 // pi is needed by the host when importing sky maps and used by the device when getting pixels.
 const float pi_host = 3.141592653589793;
 __device__ __constant__ float pi_device = 3.141592653589793;
@@ -16,6 +18,14 @@ __device__ __constant__ float pi_device = 3.141592653589793;
 
 // h_ indicates a host-bound variable.
 // d_ indicates a device-bound variable.
+
+// Quaternionic arithmetic functions.
+
+// Calculate the Hamilton (quaternionic) product of two quaternions.
+__device__ void quatProduct(float u[4], float v[4], float result[4]);
+// Rotates a 3D Cartesian vector, vec (a pure quaternion), by rotation_quat.
+// result will be the rotated vector represented as a pure quaternion.
+__device__ void rotateVecByQuat(float vec[4], float rotation_quat[4], float result[4]);
 
 class Tracer
 {
@@ -43,22 +53,33 @@ class Tracer
         float h_cam_coords[8];
         float* d_cam_coords;
         // Camera dimensions.
-        int* d_cam_pixels { nullptr };
+        unsigned int* d_cam_pixels { nullptr };
         unsigned char* d_cam_pixel_array { nullptr };
         float* d_cam_fov_conv_factor { nullptr };
 
     public:
-        Tracer(float initial_pos[4], float initial_quat[4], int cam_pixels[2], float cam_fov, char skymap_file[]);
+        Tracer(float initial_pos[4], float initial_quat[4], unsigned int cam_pixels[2], float cam_fov, char skymap_file[]);
         ~Tracer();
 
         // Setup functions.
         void setCameraCoords(float camera_pos[4], float camera_quat[4]);
-        void setCameraResFOV(int cam_pixels[2], float fov_width);
+        void setCameraResFOV(unsigned int cam_pixels[2], float fov_width);
         void importSkyMap(char skymap_file[]);
 
         // Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
         // Overwrites result into v. Assumes Minkowski coordinates.
         __device__ void calculateStartV(float x, float y, float g[4][4], float v[4]);
+        // Makes a velocity vector null.
+        __device__ void makeVNull(float v[4], float g[4][4]);
 };
+
+// CUDA kernels.
+__global__ void traceImage(Tracer &tracer,
+                           Metric &metric,
+                           unsigned int d_cam_pixels[2],
+                           unsigned char* d_cam_pixel_array,
+                           float d_cam_coords[8],
+                           float d_d_phi,
+                           float d_d_theta);
 
 #endif

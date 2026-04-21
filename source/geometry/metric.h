@@ -1,8 +1,6 @@
 #ifndef METRIC
 #define METRIC
 
-#endif
-
 class Metric
 {
     public:
@@ -24,3 +22,5 @@ class Schwarzschild: public Metric
 
 // Calculates the scalar product of a velocity with in some metric.
 __host__ __device__ float scalarProduct(float v[4], float g[4][4]);
+
+#endif
