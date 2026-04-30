@@ -5,6 +5,7 @@
 int main()
 {
     // Path to the sky map. Should be a 2:1 aspect ratio image.
+    // TODO: Make this a command-line argument. Remove it entirely and put it in a GUI of some sort later.
     char sky_map[] { "/media/mh2001/SSD2/Programming/General_Relativity/Geodesic_Raytracer/sky_box_samples/full_milky_way.jpg" };
 
     // Initial camera position and quaternion.

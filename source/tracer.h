@@ -1,31 +1,19 @@
 #ifndef TRACER
 #define TRACER
 
-#include "geometry/metric.h"
-
-// pi is needed by the host when importing sky maps and used by the device when getting pixels.
-const float pi_host = 3.141592653589793;
-__device__ __constant__ float pi_device = 3.141592653589793;
+#include "trace_kernel_utils.h"
 
 /*
  *  Metrics are currently defined in coordinates of (ct, x, y, z)
  *  with the assumption that c = 1 is set, so the coordinates are
  *  in just (t, x, y, z). The mathematical functions can handle
- *  arbitrary coordinates just fine, but some checks rely on Cartesian coordinates
+ *  arbitrary coordinates, but some checks rely on Cartesian coordinates
  *  for now (e.g. checking if a photon crosses the photon sphere
  *  in the Schwarzschild metric).
 */
 
-// h_ indicates a host-bound variable.
-// d_ indicates a device-bound variable.
-
-// Quaternionic arithmetic functions.
-
-// Calculate the Hamilton (quaternionic) product of two quaternions.
-__device__ void quatProduct(float u[4], float v[4], float result[4]);
-// Rotates a 3D Cartesian vector, vec (a pure quaternion), by rotation_quat.
-// result will be the rotated vector represented as a pure quaternion.
-__device__ void rotateVecByQuat(float vec[4], float rotation_quat[4], float result[4]);
+// h_ indicates a host-bound variable/pointer.
+// d_ indicates a device-bound variable/pointer.
 
 class Tracer
 {
@@ -49,7 +37,7 @@ class Tracer
         float* d_d_phi { nullptr };
         float* d_d_theta { nullptr };
         // Camera location and orientation stored together for faster transfer.
-        // For a "real-time" view later on, these need to be transferred constantly to the device.
+        // For a "real-time" view later on, these need to be copied constantly to the device.
         float h_cam_coords[8];
         float* d_cam_coords;
         // Camera dimensions.
@@ -66,20 +54,8 @@ class Tracer
         void setCameraResFOV(unsigned int cam_pixels[2], float fov_width);
         void importSkyMap(char skymap_file[]);
 
-        // Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
-        // Overwrites result into v. Assumes Minkowski coordinates.
-        __device__ void calculateStartV(float x, float y, float g[4][4], float v[4]);
-        // Makes a velocity vector null.
-        __device__ void makeVNull(float v[4], float g[4][4]);
+        // Calls the raytracing kernel.
+        void callTraceKernel(Metric* metric);
 };
-
-// CUDA kernels.
-__global__ void traceImage(Tracer &tracer,
-                           Metric &metric,
-                           unsigned int d_cam_pixels[2],
-                           unsigned char* d_cam_pixel_array,
-                           float d_cam_coords[8],
-                           float d_d_phi,
-                           float d_d_theta);
 
 #endif
