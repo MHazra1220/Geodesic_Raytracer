@@ -149,16 +149,18 @@ __global__ void traceImage(Metric* metric,
                            float* d_d_phi,
                            float* d_d_theta)
 {
-    // Currently intended for 8x8 thread blocks.
-    // Big thread blocks are more likely to need different numbers of steps (results in more iterations).
+    // Currently intended for 8x4 thread blocks.
+    // Big thread blocks are more likely to need different numbers of steps (akin to thread divergence)
+    // and require more iteration over the shared array pixel_done.
 
-    __shared__ bool pixel_valid[8][8];
-    __shared__ bool pixel_done[8][8];
-    // Metric tensor. Should be okay to keep this in registers (256 bytes).
+    // 32 bytes each.
+    __shared__ bool pixel_valid[8][4];
+    __shared__ bool pixel_done[8][4];
+    // Metric tensor. Should be okay to keep this in registers (64 bytes).
     float g[4][4];
-    // Keep the Christoffel symbols in shared memory for safety. See what can be done
-    // later about moving them into registers (16 KB), probably only storing independent components.
-    __shared__ float c_symbols[8][8][4][4][4];
+    // Keep the Christoffel symbols in shared memory for safety. These can probably be stored
+    // safely in registers (256 bytes per core, 8 KB per block), but it might be bad on older GPUs.
+    __shared__ float c_symbols[8][4][4][4][4];
 
     unsigned int pixel_x { blockIdx.x*blockDim.x + threadIdx.x };
     unsigned int pixel_y { blockIdx.y*blockDim.y + threadIdx.y };
@@ -168,7 +170,17 @@ __global__ void traceImage(Metric* metric,
     // Count any invalid pixels as complete (stops the raytracer from moving their rays).
     pixel_done[threadIdx.x][threadIdx.y] = !pixel_valid[threadIdx.x][threadIdx.y];
 
+    int num_valid_pixels { 0 };
+    for (int i { 0 }; i < 8; i++)
+    {
+        for (int j { 0 }; j < 4; j++)
+        {
+            num_valid_pixels += 1*pixel_valid[i][j];
+        }
+    }
+
     // Store coordinates and velocity together.
+    // First 4 numbers are the 4-position, last 4 are the 4-velocity.
     float xv[8];
     #pragma unroll
     for (int i { 0 }; i < 4; i++)

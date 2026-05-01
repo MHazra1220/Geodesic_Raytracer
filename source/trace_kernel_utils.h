@@ -27,7 +27,7 @@ class Metric
         __device__ virtual bool terminateRay(float r[4]);
         // Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
         // Overwrites result into v. Assumes Minkowski coordinates.
-        __device__ virtual void calculateStartV(float x, float y, float g[4][4], float v[4],
+        __device__ void calculateStartV(float x, float y, float g[4][4], float v[4],
             unsigned int d_cam_pixels[2], float d_cam_quat[4], float d_cam_fov_conv_factor);
         // Makes a velocity vector null.
         __device__ void makeVNull(float v[4], float g[4][4]);
