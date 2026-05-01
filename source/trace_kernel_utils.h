@@ -16,18 +16,18 @@ __device__ void quatProduct(float u[4], float v[4], float result[4]);
 // result will be the rotated vector represented as a pure quaternion.
 __device__ void rotateVecByQuat(float vec[4], float rotation_quat[4], float result[4]);
 
-// Should have a copy on the GPU.
+// Should have copies between the host and device.
 class Metric
 {
     public:
         // Default metric is flat spacetime with Minkowski coordinates.
-        // Stores the calculated independent components in g.
-        __device__ void calculateMetric(float r[4], float g[4][4]);
+        // Calculates the metric tensor at r and stores it in g.
+        __device__ virtual void calculateMetric(float r[4], float g[4][4]);
         // Returns whether to terminate a photon passing going through this metric.
-        __device__ bool terminateRay(float r[4]);
+        __device__ virtual bool terminateRay(float r[4]);
         // Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
         // Overwrites result into v. Assumes Minkowski coordinates.
-        __device__ void calculateStartV(float x, float y, float g[4][4], float v[4],
+        __device__ virtual void calculateStartV(float x, float y, float g[4][4], float v[4],
             unsigned int d_cam_pixels[2], float d_cam_quat[4], float d_cam_fov_conv_factor);
         // Makes a velocity vector null.
         __device__ void makeVNull(float v[4], float g[4][4]);
@@ -38,12 +38,15 @@ class Schwarzschild: public Metric
     public:
         // Schwarzschild spacetime.
         // Overwrite functions specific to this metric.
-        __device__ void calculateMetric(float r[4], float g[4][4]);
-        __device__ bool terminateRay(float r[4]);
+        __device__ virtual void calculateMetric(float r[4], float g[4][4]);
+        __device__ virtual bool terminateRay(float r[4]);
 };
 
 // Calculates the scalar product of a velocity with in some metric.
 __host__ __device__ float scalarProduct(float v[4], float g[4][4]);
+
+// Advances with a step of RKF45.
+__device__ void advanceRay(float x[4], float v[4], float g[4][4]);
 
 // CUDA kernels.
 __global__ void traceImage(Metric* metric,
@@ -51,7 +54,7 @@ __global__ void traceImage(Metric* metric,
                            unsigned char* d_cam_pixel_array,
                            float* d_cam_fov_conv_factor,
                            float d_cam_coords[8],
-                           float d_d_phi,
-                           float d_d_theta);
+                           float* d_d_phi,
+                           float* d_d_theta);
 
 #endif

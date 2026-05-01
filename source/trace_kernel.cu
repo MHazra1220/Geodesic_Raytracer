@@ -53,27 +53,6 @@ __device__ bool Metric::terminateRay(float r[4]){
     return radius < 10.;
 }
 
-// Calculates the scalar product of a velocity in some metric.
-// Tries to use as little memory as possible; the goal
-// is to minimize register occupancy, not computation.
-__host__ __device__ float scalarProduct(float v[4], float g[4][4])
-{
-    float result { 0. };
-    for (int i { 0 }; i < 4; i++)
-    {
-        float intermediate { 0. };
-        // One component of the matrix product of g with v.
-        #pragma unroll
-        for (int j { 0 }; j < 4; j++)
-        {
-            intermediate += g[i][j]*v[j];
-        }
-        result += v[i]*intermediate;
-    }
-
-    return result;
-}
-
 // Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
 // Overwrites result into v. Assumes Minkowski coordinates.
 __device__ void Metric::calculateStartV(float x,
@@ -131,43 +110,77 @@ __device__ void Metric::makeVNull(float v[4], float g[4][4])
     v[0] = (-b + sqrt(b*b - 4.*a*c)) / (2.*a);
 }
 
+// Calculates the scalar product of a velocity in some metric.
+// Tries to use as little memory as possible; the goal
+// is to minimize register occupancy, not computation.
+__host__ __device__ float scalarProduct(float v[4], float g[4][4])
+{
+    float result { 0. };
+    for (int i { 0 }; i < 4; i++)
+    {
+        float intermediate { 0. };
+        // One component of the matrix product of g with v.
+        #pragma unroll
+        for (int j { 0 }; j < 4; j++)
+        {
+            intermediate += g[i][j]*v[j];
+        }
+        result += v[i]*intermediate;
+    }
+
+    return result;
+}
+
+// Advances with a step of RKF45.
+__device__ void advanceRay(float x[4], float v[4], float g[4][4])
+{
+
+}
+
 // CUDA kernels.
 
-// Calls the actual raytracing kernel. Should be called from a Tracer object.
+// Spacetime raytracing kernel. Should be called from a Tracer object.
+// Uses RKF45 (Runge-Kutta-Fehlberg adaptive step).
 __global__ void traceImage(Metric* metric,
                            unsigned int d_cam_pixels[2],
                            unsigned char* d_cam_pixel_array,
                            float* d_cam_fov_conv_factor,
                            float d_cam_coords[8],
-                           float *d_d_phi,
-                           float *d_d_theta)
+                           float* d_d_phi,
+                           float* d_d_theta)
 {
     // Currently intended for 8x8 thread blocks.
-    // Big thread blocks are more likely to encounter warp divergence.
+    // Big thread blocks are more likely to need different numbers of steps (results in more iterations).
 
     __shared__ bool pixel_valid[8][8];
-    // Metric tensors for all threads in this block. Risk of register spilling;
-    // store in shared memory. Slower than registers; try those later.
-    __shared__ float g[8][8][4][4];
+    __shared__ bool pixel_done[8][8];
+    // Metric tensor. Should be okay to keep this in registers (256 bytes).
+    float g[4][4];
+    // Keep the Christoffel symbols in shared memory for safety. See what can be done
+    // later about moving them into registers (16 KB), probably only storing independent components.
+    __shared__ float c_symbols[8][8][4][4][4];
 
     unsigned int pixel_x { blockIdx.x*blockDim.x + threadIdx.x };
     unsigned int pixel_y { blockIdx.y*blockDim.y + threadIdx.y };
 
     // If false, then the pixel is outside the image; ignore it.
     pixel_valid[threadIdx.x][threadIdx.y] = (pixel_x < d_cam_pixels[0]) && (pixel_y < d_cam_pixels[1]);
+    // Count any invalid pixels as complete (stops the raytracer from moving their rays).
+    pixel_done[threadIdx.x][threadIdx.y] = !pixel_valid[threadIdx.x][threadIdx.y];
 
-    if (pixel_valid[threadIdx.x][threadIdx.y])
+    // Store coordinates and velocity together.
+    float xv[8];
+    #pragma unroll
+    for (int i { 0 }; i < 4; i++)
     {
-        // Calculate ray starting velocity.
-        // Store coordinates and velocity together.
-        float xv[8];
-        for (int i { 0 }; i < 4; i++)
-        {
-            xv[i] = d_cam_coords[i];
-        }
-        // Initial metric tensor at the camera coordinates. Same for all rays.
-        metric->calculateMetric(&xv[0], &g[threadIdx.x][threadIdx.y][0]);
-        metric->calculateStartV(static_cast<float>(pixel_x), static_cast<float>(pixel_y), &g[threadIdx.x][threadIdx.y][0], &xv[4],
-            d_cam_pixels, &d_cam_coords[4], *d_cam_fov_conv_factor);
+        xv[i] = d_cam_coords[i];
     }
+    // Initial metric tensor at the camera coordinates. Same for all rays.
+    metric->calculateMetric(&xv[0], g);
+    // Calculate ray starting velocity.
+    metric->calculateStartV(static_cast<float>(pixel_x), static_cast<float>(pixel_y), g, &xv[4],
+        d_cam_pixels, &d_cam_coords[4], *d_cam_fov_conv_factor);
+
+    // Test; this probably isn't necessary.
+    __syncthreads();
 }
