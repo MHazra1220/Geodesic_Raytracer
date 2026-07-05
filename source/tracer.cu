@@ -11,12 +11,10 @@
 #include <stdexcept>
 
 // Stops this code snippet being spammed everywhere.
-void checkCudaError(cudaError_t err, std::string error_msg)
+void
+checkCudaError(cudaError_t err, std::string error_msg)
 {
-    if (err != cudaSuccess)
-    {
-        throw std::runtime_error(error_msg);
-    }
+    if (err != cudaSuccess) throw std::runtime_error(error_msg);
 }
 
 Tracer::Tracer(float initial_pos[4], float initial_quat[4], unsigned int cam_pixels[2], float cam_fov, char skymap_file[])

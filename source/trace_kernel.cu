@@ -1,5 +1,21 @@
 #include "trace_kernel_utils.h"
 
+// Constants for RKF45 method.
+
+namespace RKF45
+{
+    const float A[6] { 0., 2./9., 1./3., 0.75, 1., 5./6. };
+    float B_0[1] { 0. };
+    float B_1[1] { 2./9. };
+    float B_2[2] { 1./12., 0.25 };
+    float B_3[3] { 69./128., -243./128., 135./64. };
+    float B_4[4] { -17./12., 27./4., -27./5., 16./15. };
+    float B_5[5] { 65./432., -5./16., 13./16., 4./27., 5./144. };
+    const float *B[6] { &B_0[0], &B_1[0], &B_2[0], &B_3[0], &B_4[0], &B_5[0] };
+    const float c_k_4[5] { 1./9., 0., 9./20., 16./45., 1./12. };
+    const float c_k_5[6] { 47./450., 0., 12./25., 32./225., 1./30., 6./25. };
+};
+
 // Quaternionic arithmetic functions.
 
 // Calculate the Hamilton (quaternionic) product of two quaternions.
@@ -113,7 +129,8 @@ __device__ void Metric::makeVNull(float v[4], float g[4][4])
 // Calculates the scalar product of a velocity in some metric.
 // Tries to use as little memory as possible; the goal
 // is to minimize register occupancy, not computation.
-__host__ __device__ float scalarProduct(float v[4], float g[4][4])
+__host__ __device__ float
+scalarProduct(float v[4], float g[4][4])
 {
     float result { 0. };
     for (int i { 0 }; i < 4; i++)
@@ -127,12 +144,11 @@ __host__ __device__ float scalarProduct(float v[4], float g[4][4])
         }
         result += v[i]*intermediate;
     }
-
     return result;
 }
 
 // Advances with a step of RKF45.
-__device__ void advanceRay(float x[4], float v[4], float g[4][4])
+__device__ void advanceRayRKF45(float x[4], float v[4], float g[4][4])
 {
 
 }
@@ -141,13 +157,14 @@ __device__ void advanceRay(float x[4], float v[4], float g[4][4])
 
 // Spacetime raytracing kernel. Should be called from a Tracer object.
 // Uses RKF45 (Runge-Kutta-Fehlberg adaptive step).
-__global__ void traceImage(Metric* metric,
-                           unsigned int d_cam_pixels[2],
-                           unsigned char* d_cam_pixel_array,
-                           float* d_cam_fov_conv_factor,
-                           float d_cam_coords[8],
-                           float* d_d_phi,
-                           float* d_d_theta)
+__global__ void
+traceImage(Metric *metric,
+    unsigned int d_cam_pixels[2],
+    unsigned char *d_cam_pixel_array,
+    float *d_cam_fov_conv_factor,
+    float d_cam_coords[8],
+    float *d_d_phi,
+    float *d_d_theta)
 {
     // Currently intended for 8x4 thread blocks.
     // Big thread blocks are more likely to need different numbers of steps (akin to thread divergence)
@@ -183,10 +200,8 @@ __global__ void traceImage(Metric* metric,
     // First 4 numbers are the 4-position, last 4 are the 4-velocity.
     float xv[8];
     #pragma unroll
-    for (int i { 0 }; i < 4; i++)
-    {
-        xv[i] = d_cam_coords[i];
-    }
+    for (int i { 0 }; i < 4; i++) xv[i] = d_cam_coords[i];
+
     // Initial metric tensor at the camera coordinates. Same for all rays.
     metric->calculateMetric(&xv[0], g);
     // Calculate ray starting velocity.

@@ -24,8 +24,8 @@ class Tracer
         int h_sky_pixels[2];
         // Use float versions when sampling from the sky map.
         float h_sky_pixels_f[2];
-        int* d_sky_pixels { nullptr };
-        float* d_sky_pixels_f { nullptr };
+        int *d_sky_pixels { nullptr };
+        float *d_sky_pixels_f { nullptr };
         // Sky map is stored on the host and the device.
         // Unsigned char to represent unsigned 8-bit integers.
         unsigned char *h_sky_map { nullptr };
@@ -34,16 +34,16 @@ class Tracer
         float h_d_phi;
         float h_d_theta;
         // These have to be pointers, even though they only store a single number each.
-        float* d_d_phi { nullptr };
-        float* d_d_theta { nullptr };
+        float *d_d_phi { nullptr };
+        float *d_d_theta { nullptr };
         // Camera location and orientation stored together for faster transfer.
         // For a "real-time" view later on, these need to be copied constantly to the device.
         float h_cam_coords[8];
-        float* d_cam_coords;
+        float *d_cam_coords;
         // Camera dimensions.
-        unsigned int* d_cam_pixels { nullptr };
-        unsigned char* d_cam_pixel_array { nullptr };
-        float* d_cam_fov_conv_factor { nullptr };
+        unsigned int *d_cam_pixels { nullptr };
+        unsigned char *d_cam_pixel_array { nullptr };
+        float *d_cam_fov_conv_factor { nullptr };
 
     public:
         Tracer(float initial_pos[4], float initial_quat[4], unsigned int cam_pixels[2], float cam_fov, char skymap_file[]);

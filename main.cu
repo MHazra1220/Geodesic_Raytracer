@@ -17,7 +17,7 @@ int main()
     Tracer tracer_test { pos, quat, cam_pixels, cam_fov, sky_map };
 
     // Path to output the image (for now). Want to create a "real-time" view later on.
-    char output_image_path[] { "/media/mh2001/SSD2/Programming/General_Relativity/Geodesic_Raytracer/output_images/GPU_test.jpg" };
+    // char output_image_path[] { "/media/mh2001/SSD2/Programming/General_Relativity/Geodesic_Raytracer/output_images/GPU_test.jpg" };
 
     return 0;
 }
