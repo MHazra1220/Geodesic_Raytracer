@@ -55,7 +55,7 @@ class Tracer
         void importSkyMap(char skymap_file[]);
 
         // Calls the raytracing kernel.
-        void callTraceKernel(Metric* metric);
+        void callTraceKernel(Metric *metric);
 };
 
-#endif
+#endif // TRACER

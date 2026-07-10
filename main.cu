@@ -6,7 +6,7 @@ int main()
 {
     // Path to the sky map. Should be a 2:1 aspect ratio image.
     // TODO: Make this a command-line argument. Remove it entirely and put it in a GUI of some sort later.
-    char sky_map[] { "/media/mh2001/SSD2/Programming/General_Relativity/Geodesic_Raytracer/sky_box_samples/full_milky_way.jpg" };
+    char sky_map[] { "/run/media/mh2001/SSD2/Programming/General_Relativity/Geodesic_Raytracer/sky_box_samples/full_milky_way.jpg" };
 
     // Initial camera position and quaternion.
     // A quaternion of (1, 0, 0, 0) is the "null" quaternion and aligns the camera with the xyz axes (angle = 0).
@@ -17,7 +17,7 @@ int main()
     Tracer tracer_test { pos, quat, cam_pixels, cam_fov, sky_map };
 
     // Path to output the image (for now). Want to create a "real-time" view later on.
-    // char output_image_path[] { "/media/mh2001/SSD2/Programming/General_Relativity/Geodesic_Raytracer/output_images/GPU_test.jpg" };
+    // char output_image_path[] { "/run/media/mh2001/SSD2/Programming/General_Relativity/Geodesic_Raytracer/output_images/GPU_test.jpg" };
 
     return 0;
 }

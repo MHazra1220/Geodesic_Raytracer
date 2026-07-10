@@ -109,7 +109,7 @@ void Tracer::importSkyMap(char skymap_file[])
 }
 
 // Calls the raytracing kernel.
-void Tracer::callTraceKernel(Metric* metric)
+void Tracer::callTraceKernel(Metric *metric)
 {
 
 }

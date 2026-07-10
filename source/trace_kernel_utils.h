@@ -33,20 +33,26 @@ class Metric
         __device__ void makeVNull(float v[4], float g[4][4]);
 };
 
-class Schwarzschild: public Metric
+class Schwarzschild : public Metric
 {
     public:
         // Schwarzschild spacetime.
         // Overwrite functions specific to this metric.
         __device__ void calculateMetric(float r[4], float g[4][4]) override;
         __device__ bool terminateRay(float r[4]) override;
+
+    private:
+        // Black hole radius (Schwarzschild radius).
+        // Assumed fixed for now.
+        const float s_radius { 1. };
+        const float s_radius_squared { s_radius * s_radius };
 };
 
 // Calculates the scalar product of a velocity with in some metric.
 __host__ __device__ float scalarProduct(float v[4], float g[4][4]);
 
 // Advances with a step of RKF45.
-__device__ void advanceRayRKF45(float x[4], float v[4], float g[4][4]);
+__device__ void advanceRayRKF45(Metric *metric, float x[4], float v[4], float g[4][4], bool stop_advance);
 
 // CUDA kernels.
 __global__ void traceImage(Metric *metric,
@@ -55,6 +61,8 @@ __global__ void traceImage(Metric *metric,
                            float *d_cam_fov_conv_factor,
                            float d_cam_coords[8],
                            float *d_d_phi,
-                           float *d_d_theta);
+                           float *d_d_theta,
+                           unsigned char *d_sky_pixels,
+                           unsigned char *d_sky_map);
 
-#endif
+#endif // TRACE_KERNEL_UTILS

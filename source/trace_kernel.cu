@@ -5,7 +5,7 @@
 namespace RKF45
 {
     const float A[6] { 0., 2./9., 1./3., 0.75, 1., 5./6. };
-    float B_0[1] { 0. };
+    float B_0[0] { };
     float B_1[1] { 2./9. };
     float B_2[2] { 1./12., 0.25 };
     float B_3[3] { 69./128., -243./128., 135./64. };
@@ -19,7 +19,8 @@ namespace RKF45
 // Quaternionic arithmetic functions.
 
 // Calculate the Hamilton (quaternionic) product of two quaternions.
-__device__ void quatProduct(float u[4], float v[4], float result[4])
+__device__ void
+quatProduct(float u[4], float v[4], float result[4])
 {
     result[0] = u[0]*v[0] - (u[1]*v[1] + u[2]*v[2] + u[3]*v[3]);
     // Cross product of the vector components of u and v is needed.
@@ -36,7 +37,8 @@ __device__ void quatProduct(float u[4], float v[4], float result[4])
 
 // Rotates a 3D Cartesian vector, vec (a pure quaternion), by rotation_quat.
 // result will be the rotated vector represented as a pure quaternion.
-__device__ void rotateVecByQuat(float vec[4], float rotation_quat[4], float result[4])
+__device__ void
+rotateVecByQuat(float vec[4], float rotation_quat[4], float result[4])
 {
     // Assume that rotation_quat is normalised; checking isn't worth the cost.
     float rotation_quat_inverse[4];
@@ -53,7 +55,8 @@ __device__ void rotateVecByQuat(float vec[4], float rotation_quat[4], float resu
 
 // Stores the calculated independent components in g.
 // Flat/Minkowski spacetime; same everywhere.
-__device__ void Metric::calculateMetric(float r[4], float g[4][4])
+__device__ void
+Metric::calculateMetric(float r[4], float g[4][4])
 {
     g[0][0] = -1.; g[0][1] = 0.; g[0][2] = 0.; g[0][3] = 0.;
     g[1][0] = 0.; g[1][1] = 1.; g[1][2] = 0.; g[0][3] = 0.;
@@ -62,22 +65,26 @@ __device__ void Metric::calculateMetric(float r[4], float g[4][4])
 }
 
 // Returns whether to terminate a photon passing through a point in this metric.
-__device__ bool Metric::terminateRay(float r[4]){
+__device__ bool
+Metric::terminateRay(float r[4]){
     // Flat spacetime has no obvious termination condition.
     // Currently just measures whether the ray is beyond some radius.
-    float radius { norm3df(r[1], r[2], r[3]) };
-    return radius < 10.;
+    float radius_squared { r[1] * r[1] +
+                           r[2] * r[2] +
+                           r[3] * r[3] };
+    return radius_squared < 100.;
 }
 
 // Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
 // Overwrites result into v. Assumes Minkowski coordinates.
-__device__ void Metric::calculateStartV(float x,
-                                        float y,
-                                        float g[4][4],
-                                        float v[4],
-                                        unsigned int d_cam_pixels[2],
-                                        float d_cam_quat[4],
-                                        float d_cam_fov_conv_factor)
+__device__ void
+Metric::calculateStartV(float x,
+                        float y,
+                        float g[4][4],
+                        float v[4],
+                        unsigned int d_cam_pixels[2],
+                        float d_cam_quat[4],
+                        float d_cam_fov_conv_factor)
 {
     // Local phi and theta coordinates in the camera's reference frame.
     // Negative in phi because phi increases anticlockwise around the local z-axis.
@@ -96,7 +103,8 @@ __device__ void Metric::calculateStartV(float x,
 }
 
 // Make a velocity vector null (assuming Minkowski coordinates).
-__device__ void Metric::makeVNull(float v[4], float g[4][4])
+__device__ void
+Metric::makeVNull(float v[4], float g[4][4])
 {
     float a { g[0][0] };
     float b { 0. };
@@ -126,6 +134,21 @@ __device__ void Metric::makeVNull(float v[4], float g[4][4])
     v[0] = (-b + sqrt(b*b - 4.*a*c)) / (2.*a);
 }
 
+// Schwarzschild metric functions.
+//--------------------------------
+__device__ void
+Schwarzschild::calculateMetric(float r[4], float g[4][4])
+{
+    // TODO: Write me.
+}
+
+__device__ bool
+Schwarzschild::terminateRay(float r[4])
+{
+    float r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
+    return r_squared > s_radius * s_radius;
+}
+
 // Calculates the scalar product of a velocity in some metric.
 // Tries to use as little memory as possible; the goal
 // is to minimize register occupancy, not computation.
@@ -148,7 +171,7 @@ scalarProduct(float v[4], float g[4][4])
 }
 
 // Advances with a step of RKF45.
-__device__ void advanceRayRKF45(float x[4], float v[4], float g[4][4])
+__device__ void advanceRayRKF45(Metric *metric, float x[4], float v[4], float g[4][4], bool stop_advance)
 {
 
 }
@@ -157,6 +180,7 @@ __device__ void advanceRayRKF45(float x[4], float v[4], float g[4][4])
 
 // Spacetime raytracing kernel. Should be called from a Tracer object.
 // Uses RKF45 (Runge-Kutta-Fehlberg adaptive step).
+// Modifies the array d_cam_pixel_array in place with the traced image.
 __global__ void
 traceImage(Metric *metric,
     unsigned int d_cam_pixels[2],
@@ -164,10 +188,12 @@ traceImage(Metric *metric,
     float *d_cam_fov_conv_factor,
     float d_cam_coords[8],
     float *d_d_phi,
-    float *d_d_theta)
+    float *d_d_theta,
+    unsigned char *d_sky_pixels,
+    unsigned char *d_sky_map)
 {
     // Currently intended for 8x4 thread blocks.
-    // Big thread blocks are more likely to need different numbers of steps (akin to thread divergence)
+    // Big thread blocks are more likely to need different numbers of steps (thread divergence)
     // and require more iteration over the shared array pixel_done.
 
     // 32 bytes each.
@@ -179,8 +205,8 @@ traceImage(Metric *metric,
     // safely in registers (256 bytes per core, 8 KB per block), but it might be bad on older GPUs.
     __shared__ float c_symbols[8][4][4][4][4];
 
-    unsigned int pixel_x { blockIdx.x*blockDim.x + threadIdx.x };
-    unsigned int pixel_y { blockIdx.y*blockDim.y + threadIdx.y };
+    unsigned int pixel_x { blockIdx.x * blockDim.x + threadIdx.x };
+    unsigned int pixel_y { blockIdx.y * blockDim.y + threadIdx.y };
 
     // If false, then the pixel is outside the image; ignore it.
     pixel_valid[threadIdx.x][threadIdx.y] = (pixel_x < d_cam_pixels[0]) && (pixel_y < d_cam_pixels[1]);
@@ -188,11 +214,9 @@ traceImage(Metric *metric,
     pixel_done[threadIdx.x][threadIdx.y] = !pixel_valid[threadIdx.x][threadIdx.y];
 
     int num_valid_pixels { 0 };
-    for (int i { 0 }; i < 8; i++)
-    {
-        for (int j { 0 }; j < 4; j++)
-        {
-            num_valid_pixels += 1*pixel_valid[i][j];
+    for (int i { 0 }; i < 8; i++) {
+        for (int j { 0 }; j < 4; j++) {
+            num_valid_pixels += 1 * pixel_valid[i][j];
         }
     }
 
@@ -200,7 +224,9 @@ traceImage(Metric *metric,
     // First 4 numbers are the 4-position, last 4 are the 4-velocity.
     float xv[8];
     #pragma unroll
-    for (int i { 0 }; i < 4; i++) xv[i] = d_cam_coords[i];
+    for (int i { 0 }; i < 4; i++) {
+        xv[i] = d_cam_coords[i];
+    }
 
     // Initial metric tensor at the camera coordinates. Same for all rays.
     metric->calculateMetric(&xv[0], g);
@@ -208,6 +234,51 @@ traceImage(Metric *metric,
     metric->calculateStartV(static_cast<float>(pixel_x), static_cast<float>(pixel_y), g, &xv[4],
         d_cam_pixels, &d_cam_coords[4], *d_cam_fov_conv_factor);
 
-    // Test; this probably isn't necessary.
+    // Test; this might not be necessary.
+    // Potential thread divergence due to Taylor expansions in calculateMetric and calculateStartV.
     __syncthreads();
+
+    // Main raytracing loop. Iterates until all the pixels in the thread block are done.
+    // Should avoid thread divergence.
+    int num_pixels_done { 0 };
+    while (num_pixels_done < num_valid_pixels) {
+        pixel_done[threadIdx.x][threadIdx.y] = metric->terminateRay(&xv[0]) || pixel_done[threadIdx.x][threadIdx.y];
+
+        advanceRayRKF45(metric, &xv[0], &xv[4], g, pixel_done[threadIdx.x][threadIdx.y]);
+        __syncthreads();
+
+        num_pixels_done = 0;
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 4; j++) {
+                num_pixels_done += pixel_done[i][j];
+            }
+        }
+    }
+
+    // Use the velocity to take the photon to infinity and sample the sky box.
+    float phi { atan2(xv[6], xv[5]) };
+    // Move into the range 0 to 2*pi if phi < 0.
+    phi += 2. * pi_device * (phi < 0.);
+    float theta { acos(xv[7] * rnorm3df(xv[5], xv[6], xv[7])) };
+    // WARNING: Potential thread divergence from Taylor expansions?
+
+    // Convert to pixel locations on the sky map; floor the number.
+    // Phi goes anticlockwise, so 2.*pi - phi transforms it to stop
+    // the image using the wrong phi coordinates.
+    unsigned int sky_x { (unsigned int)((2. * pi_device - phi) / *d_d_phi) };
+    unsigned int sky_y { (unsigned int)(theta / *d_d_theta) };
+    // Address of the pixel RGB colour.
+    unsigned char *colour { &d_sky_map[3 * (sky_y * d_sky_pixels[0] + sky_x)] };
+
+    // Write camera image.
+    // Some thread divergence if the block goes off the camera view is inevitable
+    // here. Should be a very minor effect and should be avoidable entirely
+    // with smart choices of resolutions and kernel sizes.
+    if (pixel_valid[threadIdx.x][threadIdx.y]) {
+        // TODO: Set pixels to black if they enter a black hole?
+        unsigned int pixel_index { 3*(pixel_y * d_cam_pixels[0] + pixel_x) };
+        for (int i = 0; i < 3; i++) {
+            d_cam_pixel_array[pixel_index + i] = colour[i];
+        }
+    }
 }
