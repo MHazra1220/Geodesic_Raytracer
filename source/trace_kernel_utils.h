@@ -51,8 +51,17 @@ class Schwarzschild : public Metric
 // Calculates the scalar product of a velocity with in some metric.
 __host__ __device__ float scalarProduct(float v[4], float g[4][4]);
 
+// Inverts a symmetric 4x4 matric; needed to get the inverse metric for the Christoffel symbols.
+__device__ void invertSymmetric4Matrix(float m[4][4], float m_inv[4][4]);
+
+// Calculate metric derivatives at r.
+__device__ void calculateMetricDerivs(Metric *metric, float r[4], float g_derivs[4][4][4]);
+
+// Calculate the Christoffel symbols.
+__device__ void calculateChristoffelSymbols(Metric *metric, float r[4], float g[4][4], float c_symbols[4][4][4], float g_derivs[4][4][4]);
+
 // Advances with a step of RKF45.
-__device__ void advanceRayRKF45(Metric *metric, float x[4], float v[4], float g[4][4], bool stop_advance);
+__device__ void advanceRayRKF45(Metric *metric, float x[4], float v[4], float g[4][4], float g_derivs[4][4][4], float c_symbols[4][4][4], bool stop_advance);
 
 // CUDA kernels.
 __global__ void traceImage(Metric *metric,
