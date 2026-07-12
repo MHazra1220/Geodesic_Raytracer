@@ -186,11 +186,69 @@ scalarProduct(float v[4], float g[4][4])
     return result;
 }
 
-// Inverts a symmetric 4x4 matric; needed to get the inverse metric for the Christoffel symbols.
+// Inverts a symmetric 4x4 metric; needed to get the inverse metric for the Christoffel symbols.
 __device__ void
-invertSymmetric4Matrix(float m[4][4], float m_inv[4][4])
+invertSymmetric4Metric(float m[4][4], float m_inv[4][4])
 {
-    // TODO: Write me!
+    // Computationally fastest way for such a small system is probably
+    // a hard implementation of the 4x4 inverse.
+    // For the love of God, don't make a typo here...
+    // TODO: This needs checking!
+    m_inv[0][0] = m[1][1] * m[2][2] * m[3][3] + m[1][2] * m[2][3] * m[3][1] +
+        m[1][3] * m[2][1] * m[3][2] - m[1][1] * m[2][3] * m[3][2] -
+        m[1][2] * m[2][1] * m[3][3] - m[1][3] * m[2][2] * m[3][1];
+    m_inv[0][1] = m[0][1] * m[2][3] * m[3][2] + m[0][2] * m[2][1] * m[3][3] +
+        m[0][3] + m[2][2] * m[3][1] - m[0][1] * m[2][2] * m[3][3] -
+        m[0][2] * m[2][3] * m[3][1] - m[0][3] * m[2][1] * m[3][2];
+    m_inv[1][0] = m_inv[0][1];
+    m_inv[0][2] = m[0][1] * m[1][2] * m[3][3] + m[0][2] * m[1][3] * m[3][1] +
+        m[0][3] * m[1][1] * m[3][2] - m[0][1] * m[1][3] * m[3][2] -
+        m[0][2] * m[1][1] * m[3][3] - m[0][3] * m[1][2] * m[3][1];
+    m_inv[2][0] = m_inv[0][2];
+    m_inv[0][3] = m[0][1] * m[1][3] * m[2][2] + m[0][2] * m[1][1] * m[2][3] +
+        m[0][3] * m[1][2] * m[2][1] - m[0][1] * m[1][2] * m[2][3] -
+        m[0][2] * m[1][3] * m[2][1] - m[0][3] * m[1][1] * m[2][2];
+    m_inv[3][0] = m_inv[0][3];
+    m_inv[1][1] = m[0][0] * m[2][2] * m[3][3] + m[0][2] * m[2][3] * m[3][0] +
+        m[0][3] * m[2][0] * m[3][2] - m[0][0] * m[2][3] * m[3][2] -
+        m[0][2] * m[2][0] * m[3][3] - m[0][3] * m[2][2] * m[3][0];
+    m_inv[1][2] = m[0][0] * m[1][3] * m[3][2] + m[0][2] * m[1][0] * m[3][3] +
+        m[0][3] * m[1][2] * m[3][0] - m[0][0] * m[1][2] * m[3][3] -
+        m[0][2] * m[1][3] * m[3][0] - m[0][3] * m[1][0] * m[3][2];
+    m_inv[2][1] = m_inv[1][2];
+    m_inv[1][3] = m[0][0] * m[1][2] * m[2][3] + m[0][2] * m[1][3] * m[2][0] +
+        m[0][3] * m[1][0] * m[2][2] - m[0][0] * m[1][3] * m[2][2] -
+        m[0][2] * m[1][0] * m[2][3] - m[0][3] * m[1][2] * m[2][0];
+    m_inv[3][1] = m_inv[1][3];
+    m_inv[2][2] = m[0][0] * m[1][1] * m[3][3] + m[0][1] * m[1][3] * m[3][0] +
+        m[0][3] * m[1][0] * m[3][1] - m[0][0] * m[1][3] * m[3][1] -
+        m[0][1] * m[1][0] * m[3][3] - m[0][3] * m[1][1] * m[3][0];
+    m_inv[2][3] = m[0][0] * m[1][3] * m[2][1] + m[0][1] * m[1][0] * m[2][3] +
+        m[0][3] * m[1][1] * m[2][0] - m[0][0] * m[1][1] * m[2][3] -
+        m[0][1] * m[1][3] * m[2][0] - m[0][3] * m[1][0] * m[2][1];
+    m_inv[3][2] = m_inv[2][3];
+    m_inv[3][3] = m[0][0] * m[1][1] * m[2][2] + m[0][1] * m[1][2] * m[2][0] +
+        m[0][2] * m[1][0] * m[2][1] - m[0][0] * m[1][2] * m[2][1] -
+        m[0][1] * m[1][0] * m[2][2] - m[0][2] * m[1][1] * m[2][0];
+
+    // The scalar product of the metric with its inverse should give the number of dimensions, i.e. 4.
+    float sum { 0. };
+    for (int i { 0 }; i < 4; i++) {
+        sum += m_inv[i][i] * m[i][i];
+        float intermediate_sum { 0. };
+        for (int j { i + 1 }; j < 4; j++) {
+            intermediate_sum += m_inv[i][j] * m[i][j];
+        }
+        sum += 2. * intermediate_sum;
+    }
+
+    // Scale inverse metric appropriately.
+    float scale_factor { 4.f / sum };
+    for (int i { 0 }; i < 4; i++) {
+        for (int j { 0 }; j < 4; j++) {
+            m_inv[i][j] *= scale_factor;
+        }
+    }
 }
 
 // Calculate metric derivatives at r.
@@ -236,7 +294,8 @@ calculateMetricDerivs(Metric *metric, float r[4], float g_derivs[4][4][4])
 
 // Calculate the Christoffel symbols.
 __device__ void
-calculateChristoffelSymbols(Metric *metric,
+calculateChristoffelSymbols(
+    Metric *metric,
     float r[4],
     float g[4][4],
     float c_symbols[4][4][4],
@@ -245,20 +304,37 @@ calculateChristoffelSymbols(Metric *metric,
     calculateMetricDerivs(metric, r, g_derivs);
     __syncthreads();
 
-    // TODO: Calculate inverse metric.
     float g_inv[4][4];
-    invertSymmetric4Matrix(g, g_inv);
+    invertSymmetric4Metric(g, g_inv);
+
+    // Calculate the Christoffel symbols.
+    for (int alpha { 0 }; alpha < 4; alpha++) {
+        for (int mu { 0 }; mu < 4; mu++) {
+            for (int nu { mu }; nu < 4; nu++) {
+                float sum { 0. };
+                for (int beta { 0 }; beta < 4; beta++) {
+                    sum += g_inv[alpha][beta] * (g_derivs[nu][beta][mu] + g_derivs[mu][nu][beta] - g_derivs[beta][mu][nu]);
+                }
+                sum *= 0.5;
+                c_symbols[alpha][mu][nu] = sum;
+                c_symbols[alpha][nu][mu] = sum;
+            }
+        }
+    }
 }
 
 // Advances with a step of RKF45.
 __device__ void
-advanceRayRKF45(Metric *metric,
+advanceRayRKF45(
+    Metric *metric,
     float x[4],
     float v[4],
     float g[4][4],
     float g_derivs[4][4][4],
     float c_symbols[4][4][4],
-    bool stop_advance)
+    bool stop_advance,
+    const float tolerance
+)
 {
 
 }
@@ -269,7 +345,8 @@ advanceRayRKF45(Metric *metric,
 // Uses RKF45 (Runge-Kutta-Fehlberg adaptive step).
 // Modifies the array d_cam_pixel_array in place with the traced image.
 __global__ void
-traceImage(Metric *metric,
+traceImage(
+    Metric *metric,
     unsigned int d_cam_pixels[2],
     unsigned char *d_cam_pixel_array,
     float *d_cam_fov_conv_factor,
@@ -283,6 +360,8 @@ traceImage(Metric *metric,
     // Big thread blocks are more likely to need different numbers of steps (thread divergence)
     // and require more iteration over the shared array pixel_done.
 
+    const float tolerance { 1e-4 };
+
     // 32 bytes each.
     __shared__ bool pixel_valid[8][4];
     __shared__ bool pixel_done[8][4];
@@ -291,7 +370,7 @@ traceImage(Metric *metric,
     // Keep the Christoffel symbols in shared memory for safety. These can probably be stored
     // safely in registers (256 bytes per core, 8 KB per block), but it might be bad on older GPUs.
     __shared__ float c_symbols[8][4][4][4][4];
-    // Metric derivatives in shared memory for now.
+    // Metric derivatives.
     __shared__ float g_derivs[8][4][4][4][4];
 
     unsigned int pixel_x { blockIdx.x * blockDim.x + threadIdx.x };
@@ -334,7 +413,7 @@ traceImage(Metric *metric,
         pixel_done[threadIdx.x][threadIdx.y] = metric->terminateRay(&xv[0]) || pixel_done[threadIdx.x][threadIdx.y];
 
         advanceRayRKF45(metric, &xv[0], &xv[4], g, &g_derivs[threadIdx.x][threadIdx.y][0],
-            &c_symbols[threadIdx.x][threadIdx.y][0], pixel_done[threadIdx.x][threadIdx.y]);
+            &c_symbols[threadIdx.x][threadIdx.y][0], pixel_done[threadIdx.x][threadIdx.y], tolerance);
 
         __syncthreads();
 
@@ -363,8 +442,8 @@ traceImage(Metric *metric,
 
     // Write camera image.
     // Some thread divergence if the block goes off the camera view is inevitable
-    // here. Should be a very minor effect and should be avoidable entirely
-    // with smart choices of resolutions and kernel sizes.
+    // here. Should be a very minor effect and avoidable entirely
+    // with good choices of resolutions and kernel sizes.
     if (pixel_valid[threadIdx.x][threadIdx.y]) {
         // TODO: Set pixels to black if they enter a black hole (when viewed from outside...).
         unsigned int pixel_index { 3*(pixel_y * d_cam_pixels[0] + pixel_x) };

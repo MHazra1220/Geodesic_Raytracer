@@ -17,6 +17,18 @@
 
 class Tracer
 {
+    public:
+        Tracer(float initial_pos[4], float initial_quat[4], unsigned int cam_pixels[2], float cam_fov, char skymap_file[]);
+        ~Tracer();
+
+        // Setup functions.
+        void setCameraCoords(float camera_pos[4], float camera_quat[4]);
+        void setCameraResFOV(unsigned int cam_pixels[2], float fov_width);
+        void importSkyMap(char skymap_file[]);
+
+        // Calls the raytracing kernel.
+        void callTraceKernel(Metric *metric);
+
     private:
         // Should be 3 for 24-bit RGB images.
         int byte_depth;
@@ -44,18 +56,6 @@ class Tracer
         unsigned int *d_cam_pixels { nullptr };
         unsigned char *d_cam_pixel_array { nullptr };
         float *d_cam_fov_conv_factor { nullptr };
-
-    public:
-        Tracer(float initial_pos[4], float initial_quat[4], unsigned int cam_pixels[2], float cam_fov, char skymap_file[]);
-        ~Tracer();
-
-        // Setup functions.
-        void setCameraCoords(float camera_pos[4], float camera_quat[4]);
-        void setCameraResFOV(unsigned int cam_pixels[2], float fov_width);
-        void importSkyMap(char skymap_file[]);
-
-        // Calls the raytracing kernel.
-        void callTraceKernel(Metric *metric);
 };
 
 #endif // TRACER
