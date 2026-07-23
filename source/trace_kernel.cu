@@ -1,20 +1,17 @@
 #include "trace_kernel_utils.h"
 
-// Constants for RKF45 method.
+// Constants for RKF45 method. Have to be in global namespace, unfortunately.
 
-namespace RKF45
-{
-    const float A[6] { 0., 2./9., 1./3., 0.75, 1., 5./6. };
-    float B_0[0] { };
-    float B_1[1] { 2./9. };
-    float B_2[2] { 1./12., 0.25 };
-    float B_3[3] { 69./128., -243./128., 135./64. };
-    float B_4[4] { -17./12., 27./4., -27./5., 16./15. };
-    float B_5[5] { 65./432., -5./16., 13./16., 4./27., 5./144. };
-    const float *B[6] { &B_0[0], &B_1[0], &B_2[0], &B_3[0], &B_4[0], &B_5[0] };
-    const float c_k_4[5] { 1./9., 0., 9./20., 16./45., 1./12. };
-    const float c_k_5[6] { 47./450., 0., 12./25., 32./225., 1./30., 6./25. };
-};
+__device__ __constant__ float A[6] { 0., 2./9., 1./3., 0.75, 1., 5./6. };
+__device__ __constant__ float B_0[1] { 0. };    // B_0 should not be used! Exists for consistency.
+__device__ __constant__ float B_1[1] { 2./9. };
+__device__ __constant__ float B_2[2] { 1./12., 0.25 };
+__device__ __constant__ float B_3[3] { 69./128., -243./128., 135./64. };
+__device__ __constant__ float B_4[4] { -17./12., 27./4., -27./5., 16./15. };
+__device__ __constant__ float B_5[5] { 65./432., -5./16., 13./16., 4./27., 5./144. };
+__device__ __constant__ float *B[6] { &B_0[0], &B_1[0], &B_2[0], &B_3[0], &B_4[0], &B_5[0] };
+__device__ __constant__ float c_k_4[6] { 1./9., 0., 9./20., 16./45., 1./12., 0. };
+__device__ __constant__ float c_k_5[6] { 47./450., 0., 12./25., 32./225., 1./30., 6./25. };
 
 // Quaternionic arithmetic functions.
 
@@ -165,7 +162,7 @@ Schwarzschild::terminateRay(float r[4])
     return r_squared > s_radius * s_radius;
 }
 
-// Calculates the scalar product of a velocity in some metric.
+// Calculates the scalar product of a velocity with a given metric tensor.
 // Tries to use as little memory as possible; the goal
 // is to minimize register occupancy, not computation.
 __host__ __device__ float
@@ -194,44 +191,45 @@ invertSymmetric4Metric(float m[4][4], float m_inv[4][4])
     // a hard implementation of the 4x4 inverse.
     // For the love of God, don't make a typo here...
     // TODO: This needs checking!
-    m_inv[0][0] = m[1][1] * m[2][2] * m[3][3] + m[1][2] * m[2][3] * m[3][1] +
-        m[1][3] * m[2][1] * m[3][2] - m[1][1] * m[2][3] * m[3][2] -
-        m[1][2] * m[2][1] * m[3][3] - m[1][3] * m[2][2] * m[3][1];
-    m_inv[0][1] = m[0][1] * m[2][3] * m[3][2] + m[0][2] * m[2][1] * m[3][3] +
-        m[0][3] + m[2][2] * m[3][1] - m[0][1] * m[2][2] * m[3][3] -
-        m[0][2] * m[2][3] * m[3][1] - m[0][3] * m[2][1] * m[3][2];
+    m_inv[0][0] = m[1][1]*m[2][2]*m[3][3] + m[1][2]*m[2][3]*m[3][1] +
+        m[1][3]*m[2][1]*m[3][2] - m[1][1]*m[2][3]*m[3][2] -
+        m[1][2]*m[2][1]*m[3][3] - m[1][3]*m[2][2]*m[3][1];
+    m_inv[0][1] = m[0][1]*m[2][3]*m[3][2] + m[0][2]*m[2][1]*m[3][3] +
+        m[0][3]*m[2][2]*m[3][1] - m[0][1]*m[2][2]*m[3][3] -
+        m[0][2]*m[2][3]*m[3][1] - m[0][3]*m[2][1]*m[3][2];
     m_inv[1][0] = m_inv[0][1];
-    m_inv[0][2] = m[0][1] * m[1][2] * m[3][3] + m[0][2] * m[1][3] * m[3][1] +
-        m[0][3] * m[1][1] * m[3][2] - m[0][1] * m[1][3] * m[3][2] -
-        m[0][2] * m[1][1] * m[3][3] - m[0][3] * m[1][2] * m[3][1];
+    m_inv[0][2] = m[0][1]*m[1][2]*m[3][3] + m[0][2]*m[1][3]*m[3][1] +
+        m[0][3]*m[1][1]*m[3][2] - m[0][1]*m[1][3]*m[3][2] -
+        m[0][2]*m[1][1]*m[3][3] - m[0][3]*m[1][2]*m[3][1];
     m_inv[2][0] = m_inv[0][2];
-    m_inv[0][3] = m[0][1] * m[1][3] * m[2][2] + m[0][2] * m[1][1] * m[2][3] +
-        m[0][3] * m[1][2] * m[2][1] - m[0][1] * m[1][2] * m[2][3] -
-        m[0][2] * m[1][3] * m[2][1] - m[0][3] * m[1][1] * m[2][2];
+    m_inv[0][3] = m[0][1]*m[1][3]*m[2][2] + m[0][2]*m[1][1]*m[2][3] +
+        m[0][3]*m[1][2]*m[2][1] - m[0][1]*m[1][2]*m[2][3] -
+        m[0][2]*m[1][3]*m[2][1] - m[0][3]*m[1][1]*m[2][2];
     m_inv[3][0] = m_inv[0][3];
-    m_inv[1][1] = m[0][0] * m[2][2] * m[3][3] + m[0][2] * m[2][3] * m[3][0] +
-        m[0][3] * m[2][0] * m[3][2] - m[0][0] * m[2][3] * m[3][2] -
-        m[0][2] * m[2][0] * m[3][3] - m[0][3] * m[2][2] * m[3][0];
-    m_inv[1][2] = m[0][0] * m[1][3] * m[3][2] + m[0][2] * m[1][0] * m[3][3] +
-        m[0][3] * m[1][2] * m[3][0] - m[0][0] * m[1][2] * m[3][3] -
-        m[0][2] * m[1][3] * m[3][0] - m[0][3] * m[1][0] * m[3][2];
+    m_inv[1][1] = m[0][0]*m[2][2]*m[3][3] + m[0][2]*m[2][3]*m[3][0] +
+        m[0][3]*m[2][0]*m[3][2] - m[0][0]*m[2][3]*m[3][2] -
+        m[0][2]*m[2][0]*m[3][3] - m[0][3]*m[2][2]*m[3][0];
+    m_inv[1][2] = m[0][0]*m[1][3]*m[3][2] + m[0][2]*m[1][0]*m[3][3] +
+        m[0][3]*m[1][2]*m[3][0] - m[0][0]*m[1][2]*m[3][3] -
+        m[0][2]*m[1][3]*m[3][0] - m[0][3]*m[1][0]*m[3][2];
     m_inv[2][1] = m_inv[1][2];
-    m_inv[1][3] = m[0][0] * m[1][2] * m[2][3] + m[0][2] * m[1][3] * m[2][0] +
-        m[0][3] * m[1][0] * m[2][2] - m[0][0] * m[1][3] * m[2][2] -
-        m[0][2] * m[1][0] * m[2][3] - m[0][3] * m[1][2] * m[2][0];
+    m_inv[1][3] = m[0][0]*m[1][2]*m[2][3] + m[0][2]*m[1][3]*m[2][0] +
+        m[0][3]*m[1][0]*m[2][2] - m[0][0]*m[1][3]*m[2][2] -
+        m[0][2]*m[1][0]*m[2][3] - m[0][3]*m[1][2]*m[2][0];
     m_inv[3][1] = m_inv[1][3];
-    m_inv[2][2] = m[0][0] * m[1][1] * m[3][3] + m[0][1] * m[1][3] * m[3][0] +
-        m[0][3] * m[1][0] * m[3][1] - m[0][0] * m[1][3] * m[3][1] -
-        m[0][1] * m[1][0] * m[3][3] - m[0][3] * m[1][1] * m[3][0];
-    m_inv[2][3] = m[0][0] * m[1][3] * m[2][1] + m[0][1] * m[1][0] * m[2][3] +
-        m[0][3] * m[1][1] * m[2][0] - m[0][0] * m[1][1] * m[2][3] -
-        m[0][1] * m[1][3] * m[2][0] - m[0][3] * m[1][0] * m[2][1];
+    m_inv[2][2] = m[0][0]*m[1][1]*m[3][3] + m[0][1]*m[1][3]*m[3][0] +
+        m[0][3]*m[1][0]*m[3][1] - m[0][0]*m[1][3]*m[3][1] -
+        m[0][1]*m[1][0]*m[3][3] - m[0][3]*m[1][1]*m[3][0];
+    m_inv[2][3] = m[0][0]*m[1][3]*m[2][1] + m[0][1]*m[1][0]*m[2][3] +
+        m[0][3]*m[1][1]*m[2][0] - m[0][0]*m[1][1]*m[2][3] -
+        m[0][1]*m[1][3]*m[2][0] - m[0][3]*m[1][0]*m[2][1];
     m_inv[3][2] = m_inv[2][3];
-    m_inv[3][3] = m[0][0] * m[1][1] * m[2][2] + m[0][1] * m[1][2] * m[2][0] +
-        m[0][2] * m[1][0] * m[2][1] - m[0][0] * m[1][2] * m[2][1] -
-        m[0][1] * m[1][0] * m[2][2] - m[0][2] * m[1][1] * m[2][0];
+    m_inv[3][3] = m[0][0]*m[1][1]*m[2][2] + m[0][1]*m[1][2]*m[2][0] +
+        m[0][2]*m[1][0]*m[2][1] - m[0][0]*m[1][2]*m[2][1] -
+        m[0][1]*m[1][0]*m[2][2] - m[0][2]*m[1][1]*m[2][0];
 
     // The scalar product of the metric with its inverse should give the number of dimensions, i.e. 4.
+    // The metric must already be correctly normalised.
     float sum { 0. };
     for (int i { 0 }; i < 4; i++) {
         sum += m_inv[i][i] * m[i][i];
@@ -244,7 +242,9 @@ invertSymmetric4Metric(float m[4][4], float m_inv[4][4])
 
     // Scale inverse metric appropriately.
     float scale_factor { 4.f / sum };
+    #pragma unroll
     for (int i { 0 }; i < 4; i++) {
+        #pragma unroll
         for (int j { 0 }; j < 4; j++) {
             m_inv[i][j] *= scale_factor;
         }
@@ -330,13 +330,56 @@ advanceRayRKF45(
     float x[4],
     float v[4],
     float g[4][4],
-    float g_derivs[4][4][4],
-    float c_symbols[4][4][4],
+    float g_derivs[4][4][4],    // Shared.
+    float c_symbols[4][4][4],   // Shared.
+    float &d_l,
+    float k_all[6][8],          // Shared.
     bool stop_advance,
     const float tolerance
 )
 {
+    const float max_dl { 5. };
 
+    // Calculate the 6 k-vectors.
+    for (int k_num { 0 }; k_num < 6; k_num++) {
+        // _ marks variables with temporary offsets.
+        float xv_[8] { x[0], x[1], x[2], x[3], v[0], v[1], v[2], v[3] };
+        // No need to modify the affine parameter;
+        // it has no effect on the derivative (for now?).
+
+        // Loop does nothing for k_0.
+        float *B_set { B[k_num] };
+        for (int i { 0 }; i < k_num + 1; i++) {
+            #pragma unroll
+            for (int j { 0 }; j < 8; j++) {
+                xv_[j] += B_set[i] * k_all[i][j];
+            }
+        }
+
+        // Current set of derivatives to modify.
+        float *k { &k_all[k_num][0] };
+
+        // Calculate velocity derivatives with the Christoffel symbols.
+        // Need the metric tensor first.
+        metric->calculateMetric(&xv_[0], g);
+        calculateChristoffelSymbols(metric, &xv_[0], g, c_symbols, g_derivs);
+        for (int mu { 0 }; mu < 4; mu++) {
+            // 4-position derivative is just the 4-velocity.
+            k[mu] = xv_[4 + mu];
+
+            float component { 0. };
+            #pragma unroll
+            for (int nu { 0 }; nu < 4; nu++) {
+                // Sum the diagonal first.
+                component += c_symbols[mu][nu][nu] * v[nu] * v[nu];
+                // Double sum the off-diagonals (symmetry of the Christoffel symbols).
+                for (int sigma { nu + 1 }; sigma < 4; sigma++) {
+                    component += 2. * c_symbols[mu][nu][sigma] * v[nu] * v[sigma];
+                }
+            }
+            k[4 + mu] = -component;
+        }
+    }
 }
 
 // CUDA kernels.
@@ -361,12 +404,16 @@ traceImage(
     // and require more iteration over the shared array pixel_done.
 
     const float tolerance { 1e-4 };
+    // Set initial step length to maximum; it will probably be cut down automatically.
+    float d_l { 5. };
 
     // 32 bytes each.
     __shared__ bool pixel_valid[8][4];
     __shared__ bool pixel_done[8][4];
     // Metric tensor. Should be okay to keep this in registers (64 bytes).
     float g[4][4];
+    // Intermediate derivatives for RKF45.
+    __shared__ float k[8][4][6][8];
     // Keep the Christoffel symbols in shared memory for safety. These can probably be stored
     // safely in registers (256 bytes per core, 8 KB per block), but it might be bad on older GPUs.
     __shared__ float c_symbols[8][4][4][4][4];
@@ -402,7 +449,7 @@ traceImage(
     metric->calculateStartV(static_cast<float>(pixel_x), static_cast<float>(pixel_y), g, &xv[4],
         d_cam_pixels, &d_cam_coords[4], *d_cam_fov_conv_factor);
 
-    // Test; this might not be necessary.
+    // TEST: This might be unnecessary.
     // Potential thread divergence due to Taylor expansions in calculateMetric and calculateStartV.
     __syncthreads();
 
@@ -413,12 +460,17 @@ traceImage(
         pixel_done[threadIdx.x][threadIdx.y] = metric->terminateRay(&xv[0]) || pixel_done[threadIdx.x][threadIdx.y];
 
         advanceRayRKF45(metric, &xv[0], &xv[4], g, &g_derivs[threadIdx.x][threadIdx.y][0],
-            &c_symbols[threadIdx.x][threadIdx.y][0], pixel_done[threadIdx.x][threadIdx.y], tolerance);
+            &c_symbols[threadIdx.x][threadIdx.y][0], d_l, &k[threadIdx.x][threadIdx.y][0],
+            pixel_done[threadIdx.x][threadIdx.y], tolerance);
 
+        // Might be unnecessary; need to test.
         __syncthreads();
 
+        // Small thread blocks are useful here to reduce summations.
         num_pixels_done = 0;
+        #pragma unroll
         for (int i = 0; i < 8; i++) {
+            #pragma unroll
             for (int j = 0; j < 4; j++) {
                 num_pixels_done += pixel_done[i][j];
             }
@@ -445,7 +497,7 @@ traceImage(
     // here. Should be a very minor effect and avoidable entirely
     // with good choices of resolutions and kernel sizes.
     if (pixel_valid[threadIdx.x][threadIdx.y]) {
-        // TODO: Set pixels to black if they enter a black hole (when viewed from outside...).
+        // TODO: Set pixels to black if they enter a black hole (when viewed from beyond the photon sphere..).
         unsigned int pixel_index { 3*(pixel_y * d_cam_pixels[0] + pixel_x) };
         for (unsigned int i = 0; i < 3; i++) {
             d_cam_pixel_array[pixel_index + i] = colour[i];
