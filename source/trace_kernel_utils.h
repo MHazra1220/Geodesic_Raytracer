@@ -68,7 +68,7 @@ __device__ void advanceRayRKF45(
     float g[4][4],
     float g_derivs[4][4][4],
     float c_symbols[4][4][4],
-    float &d_l,
+    float &dl,
     float k_all[6][8],
     bool stop_advance,
     const float tolerance

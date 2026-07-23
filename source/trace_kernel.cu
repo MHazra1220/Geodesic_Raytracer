@@ -332,7 +332,7 @@ advanceRayRKF45(
     float g[4][4],
     float g_derivs[4][4][4],    // Shared.
     float c_symbols[4][4][4],   // Shared.
-    float &d_l,
+    float &dl,
     float k_all[6][8],          // Shared.
     bool stop_advance,
     const float tolerance
@@ -345,14 +345,14 @@ advanceRayRKF45(
         // _ marks variables with temporary offsets.
         float xv_[8] { x[0], x[1], x[2], x[3], v[0], v[1], v[2], v[3] };
         // No need to modify the affine parameter;
-        // it has no effect on the derivative (for now?).
+        // it has no effect on the derivative function (for now?).
 
         // Loop does nothing for k_0.
         float *B_set { B[k_num] };
-        for (int i { 0 }; i < k_num + 1; i++) {
+        for (int i { 0 }; i < k_num; i++) {
             #pragma unroll
-            for (int j { 0 }; j < 8; j++) {
-                xv_[j] += B_set[i] * k_all[i][j];
+            for (int mu { 0 }; mu < 8; mu++) {
+                xv_[mu] += B_set[i] * k_all[i][mu];
             }
         }
 
@@ -365,21 +365,64 @@ advanceRayRKF45(
         calculateChristoffelSymbols(metric, &xv_[0], g, c_symbols, g_derivs);
         for (int mu { 0 }; mu < 4; mu++) {
             // 4-position derivative is just the 4-velocity.
-            k[mu] = xv_[4 + mu];
+            k[mu] = xv_[4 + mu] * dl;
 
             float component { 0. };
             #pragma unroll
             for (int nu { 0 }; nu < 4; nu++) {
                 // Sum the diagonal first.
                 component += c_symbols[mu][nu][nu] * v[nu] * v[nu];
-                // Double sum the off-diagonals (symmetry of the Christoffel symbols).
+                // Double sum the off-diagonals (Christoffel symbol symmetry).
                 for (int sigma { nu + 1 }; sigma < 4; sigma++) {
                     component += 2. * c_symbols[mu][nu][sigma] * v[nu] * v[sigma];
                 }
             }
-            k[4 + mu] = -component;
+            k[4 + mu] = -component * dl;
         }
     }
+
+    // Calculate 4th and 5th-order estimate deltas.
+    float xv_4[8] { 0., 0., 0., 0., 0., 0., 0., 0. };
+    float xv_5[8] { 0., 0., 0., 0., 0., 0., 0., 0. };
+    for (int i { 0 }; i < 6; i++) {
+        // Only need positions to 4th-order for tolerance testing.
+        #pragma unroll
+        for (int mu { 0 }; mu < 4; mu++) {
+            xv_4[mu] += c_k_4[i] * k_all[i][mu];
+        }
+        #pragma unroll
+        for (int mu { 0 }; mu < 8; mu++) {
+            xv_5[mu] += c_k_5[i] * k_all[i][mu];
+        }
+    }
+
+    // Test tolerances in position.
+    bool advance { true };
+    float max_error { 0. };
+    #pragma unroll
+    for (int mu { 0 }; mu < 4; mu++) {
+        float error { fabsf(xv_5[mu] - xv_4[mu]) };
+        advance = advance && error < tolerance;
+        bool replace_error { error > max_error };
+        max_error = (replace_error * error) + (!replace_error * max_error);
+    }
+
+    // If stop_advance is true, don't advance no matter what.
+    advance = advance && !stop_advance;
+
+    // Advance positions and velocities.
+    // Doesn't advance if tolerance checks failed or stop_advance is true.
+    #pragma unroll
+    for (int mu { 0 }; mu < 4; mu++) {
+        x[mu] += xv_5[mu] * advance;
+        x[4 + mu] += xv_5[4 + mu] * advance;
+    }
+
+    // Calculate next step size (or the step size to try next if the current iteration failed tolerance checks).
+    dl *= 0.9 * powf(tolerance / max_error, 0.2);
+    // Limit max step size.
+    bool limit_size { dl > max_dl };
+    dl = (!limit_size * dl) + (limit_size * max_dl);
 }
 
 // CUDA kernels.
