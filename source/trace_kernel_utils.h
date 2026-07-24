@@ -83,7 +83,7 @@ __global__ void traceImage(
     float d_cam_coords[8],
     float *d_d_phi,
     float *d_d_theta,
-    unsigned char *d_sky_pixels,
+    int d_sky_pixels[2],
     unsigned char *d_sky_map
 );
 

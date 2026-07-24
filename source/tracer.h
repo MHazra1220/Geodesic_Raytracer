@@ -27,7 +27,11 @@ class Tracer
         void importSkyMap(char skymap_file[]);
 
         // Calls the raytracing kernel.
-        void callTraceKernel(Metric *metric);
+        void callTraceKernel();
+
+        // Copy traced image from device back to host and save.
+        void transferImageToHost();
+        void saveTracedImage(char output_path[]);
 
     private:
         // Should be 3 for 24-bit RGB images.
@@ -53,9 +57,15 @@ class Tracer
         float h_cam_coords[8];
         float *d_cam_coords;
         // Camera dimensions.
+        unsigned int h_cam_pixels[2];
         unsigned int *d_cam_pixels { nullptr };
+        unsigned char *h_cam_pixel_array { nullptr };
         unsigned char *d_cam_pixel_array { nullptr };
         float *d_cam_fov_conv_factor { nullptr };
+
+        // Metric to trace in.
+        Metric h_metric;
+        Metric *d_metric;
 };
 
 #endif // TRACER

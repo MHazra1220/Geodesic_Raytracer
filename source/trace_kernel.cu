@@ -382,7 +382,7 @@ advanceRayRKF45(
     }
 
     // Calculate 4th and 5th-order estimate deltas.
-    float xv_4[8] { 0., 0., 0., 0., 0., 0., 0., 0. };
+    float xv_4[4] { 0., 0., 0., 0. };
     float xv_5[8] { 0., 0., 0., 0., 0., 0., 0., 0. };
     for (int i { 0 }; i < 6; i++) {
         // Only need positions to 4th-order for tolerance testing.
@@ -396,7 +396,7 @@ advanceRayRKF45(
         }
     }
 
-    // Test tolerances in position.
+    // Test truncation error tolerances in position.
     bool advance { true };
     float max_error { 0. };
     #pragma unroll
@@ -415,7 +415,7 @@ advanceRayRKF45(
     #pragma unroll
     for (int mu { 0 }; mu < 4; mu++) {
         x[mu] += xv_5[mu] * advance;
-        x[4 + mu] += xv_5[4 + mu] * advance;
+        v[mu] += xv_5[4 + mu] * advance;
     }
 
     // Calculate next step size (or the step size to try next if the current iteration failed tolerance checks).
@@ -439,7 +439,7 @@ traceImage(
     float d_cam_coords[8],
     float *d_d_phi,
     float *d_d_theta,
-    unsigned char *d_sky_pixels,
+    int d_sky_pixels[2],
     unsigned char *d_sky_map)
 {
     // Currently intended for 8x4 thread blocks.

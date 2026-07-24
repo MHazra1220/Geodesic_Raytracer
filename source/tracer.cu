@@ -6,6 +6,9 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "STB_IO/stb_image_write.h"
 
+// DEBUG MODULES
+#include "cuda_profiler_api.h"
+
 #include <iostream>
 #include <string>
 #include <stdexcept>
@@ -39,11 +42,19 @@ Tracer::Tracer(float initial_pos[4], float initial_quat[4], unsigned int cam_pix
     setCameraCoords(initial_pos, initial_quat);
     setCameraResFOV(cam_pixels, cam_fov);
     importSkyMap(skymap_file);
+
+    // Create metric object. Test with flat (Minkowski) space for now.
+    err = cudaMalloc((void**)&d_metric, sizeof(Metric));
+    checkCudaError(err, std::string("Error: failed to allocate space for metric on device."));
+    err = cudaMemcpy(d_metric, &h_metric, sizeof(Metric), cudaMemcpyHostToDevice);
 }
 
 // Free allocated arrays on host and device.
 Tracer::~Tracer()
 {
+    free(h_sky_map);
+    free(h_cam_pixel_array);
+
     cudaFree(d_sky_pixels);
     cudaFree(d_sky_pixels_f);
     cudaFree(d_sky_map);
@@ -53,10 +64,13 @@ Tracer::~Tracer()
     cudaFree(d_cam_pixels);
     cudaFree(d_cam_pixel_array);
     cudaFree(d_cam_fov_conv_factor);
+    cudaFree(d_metric);
 }
 
-void Tracer::setCameraCoords(float camera_pos[4], float camera_quat[4])
+void
+Tracer::setCameraCoords(float camera_pos[4], float camera_quat[4])
 {
+    #pragma unroll
     for (int i { 0 }; i < 4; i++)
     {
         h_cam_coords[i] = camera_pos[i];
@@ -68,15 +82,20 @@ void Tracer::setCameraCoords(float camera_pos[4], float camera_quat[4])
     checkCudaError(err, std::string("Error: failed to copy camera coordinates to device."));
 }
 
-void Tracer::setCameraResFOV(unsigned int cam_pixels[2], float fov_width)
+void
+Tracer::setCameraResFOV(unsigned int cam_pixels[2], float fov_width)
 {
+    h_cam_pixels[0] = cam_pixels[0];
+    h_cam_pixels[1] = cam_pixels[1];
     cudaError_t err { cudaSuccess };
-    err = cudaMemcpy(d_cam_pixels, &cam_pixels[0], 2*sizeof(unsigned int), cudaMemcpyHostToDevice);
+    err = cudaMemcpy(d_cam_pixels, h_cam_pixels, 2*sizeof(unsigned int), cudaMemcpyHostToDevice);
     checkCudaError(err, std::string("Error: failed to copy camera pixel dimensions to device."));
     // Allocate memory for the camera pixel array on the device.
     cudaFree(d_cam_pixel_array);
     // 24-bit RGB image.
-    err = cudaMalloc((void**)&d_cam_pixel_array, sizeof(unsigned char)*cam_pixels[0]*cam_pixels[1]*3);
+    auto image_size { sizeof(unsigned char)*cam_pixels[0]*cam_pixels[1]*3 };
+    h_cam_pixel_array = (unsigned char*)malloc(image_size);
+    err = cudaMalloc((void**)&d_cam_pixel_array, image_size);
     checkCudaError(err, std::string("Error: failed to allocate memory for camera pixel array on device."));
 
     // Set camera FOV conversion factor.
@@ -86,22 +105,29 @@ void Tracer::setCameraResFOV(unsigned int cam_pixels[2], float fov_width)
     checkCudaError(err, std::string("Error: failed to copy camera FOV to device."));
 }
 
-void Tracer::importSkyMap(char skymap_file[])
+void
+Tracer::importSkyMap(char skymap_file[])
 {
     h_sky_map = stbi_load(skymap_file, &h_sky_pixels[0], &h_sky_pixels[1], &byte_depth, 3);
     h_sky_pixels_f[0] = static_cast<float>(h_sky_pixels[0]);
     h_sky_pixels_f[1] = static_cast<float>(h_sky_pixels[1]);
     h_d_phi = (2.*pi_host) / h_sky_pixels_f[0];
     h_d_theta = pi_host / h_sky_pixels_f[1];
+
     // Transfer to device memory.
     // Free existing map (if it exists).
     cudaFree(d_sky_map);
+
     size_t map_size { sizeof(unsigned char)*h_sky_pixels[0]*h_sky_pixels[1]*byte_depth };
     cudaError_t err { cudaSuccess };
     err = cudaMalloc((void**)&d_sky_map, map_size);
     checkCudaError(err, std::string("Error: failed to allocate memory for sky map on device."));
     err = cudaMemcpy(d_sky_map, h_sky_map, map_size, cudaMemcpyHostToDevice);
     checkCudaError(err, std::string("Error: failed to copy sky map from host to device."));
+    err = cudaMemcpy(d_sky_pixels, h_sky_pixels, 2*sizeof(int), cudaMemcpyHostToDevice);
+    checkCudaError(err, std::string("Error: failed to copy sky pixels dimensions from host to device."));
+    err = cudaMemcpy(d_sky_pixels_f, h_sky_pixels_f, 2*sizeof(float), cudaMemcpyHostToDevice);
+    checkCudaError(err, std::string("Error: failed to copy sky pixels dimensions (float) from host to device."));
     err = cudaMemcpy(d_d_phi, &h_d_phi, sizeof(float), cudaMemcpyHostToDevice);
     checkCudaError(err, std::string("Error: failed to copy phi interval from host to device."));
     err = cudaMemcpy(d_d_theta, &h_d_theta, sizeof(float), cudaMemcpyHostToDevice);
@@ -109,7 +135,48 @@ void Tracer::importSkyMap(char skymap_file[])
 }
 
 // Calls the raytracing kernel.
-void Tracer::callTraceKernel(Metric *metric)
+void
+Tracer::callTraceKernel()
 {
+    dim3 threads_per_block(8, 4);
+    unsigned int num_blocks_x { h_cam_pixels[0] / 8 };
+    unsigned int num_blocks_y { h_cam_pixels[1] / 4 };
 
+    if (h_cam_pixels[0] & 8 != 0) {
+        num_blocks_x++;
+    }
+    if (h_cam_pixels[1] & 4 != 0) {
+        num_blocks_y++;
+    }
+
+    dim3 num_blocks(num_blocks_x, num_blocks_y);
+
+    traceImage<<<num_blocks, threads_per_block>>>(
+        d_metric,
+        d_cam_pixels,
+        d_cam_pixel_array,
+        d_cam_fov_conv_factor,
+        d_cam_coords,
+        d_d_phi,
+        d_d_theta,
+        d_sky_pixels,
+        d_sky_map
+    );
+}
+
+// Transfer image from device to host.
+void
+Tracer::transferImageToHost()
+{
+    cudaError_t err { cudaMemcpy(h_cam_pixel_array, d_cam_pixel_array,
+        sizeof(unsigned char)*h_cam_pixels[0]*h_cam_pixels[1]*byte_depth, cudaMemcpyDeviceToHost) };
+
+    checkCudaError(err, std::string("Error: failed to copy camera pixel array from device to host."));
+}
+
+// Save traced image. Must be copied to host first.
+void
+Tracer::saveTracedImage(char output_path[])
+{
+    stbi_write_jpg(output_path, h_cam_pixels[0], h_cam_pixels[1], byte_depth, &h_cam_pixel_array[0], 100);
 }
