@@ -499,7 +499,7 @@ traceImage(
     // Main raytracing loop. Iterates until all the pixels in the thread block are done.
     // Should avoid thread divergence.
     int num_pixels_done { 0 };
-    while (num_pixels_done < num_valid_pixels) {
+    while (num_pixels_done != num_valid_pixels) {
         pixel_done[threadIdx.x][threadIdx.y] = metric->terminateRay(&xv[0]) || pixel_done[threadIdx.x][threadIdx.y];
 
         advanceRayRKF45(metric, &xv[0], &xv[4], g, &g_derivs[threadIdx.x][threadIdx.y][0],
@@ -525,7 +525,6 @@ traceImage(
     // Move into the range 0 to 2*pi if phi < 0.
     phi += 2. * pi_device * (phi < 0.);
     float theta { acos(xv[7] * rnorm3df(xv[5], xv[6], xv[7])) };
-    // WARNING: Potential thread divergence from Taylor expansions?
 
     // Convert to pixel locations on the sky map; floor the number.
     // Phi goes anticlockwise, so 2.*pi - phi transforms it to stop
@@ -541,7 +540,8 @@ traceImage(
     // with good choices of resolutions and kernel sizes.
     if (pixel_valid[threadIdx.x][threadIdx.y]) {
         // TODO: Set pixels to black if they enter a black hole (when viewed from beyond the photon sphere..).
-        unsigned int pixel_index { 3*(pixel_y * d_cam_pixels[0] + pixel_x) };
+        int pixel_index { 3 * (pixel_y * d_cam_pixels[0] + pixel_x) };
+        #pragma unroll
         for (unsigned int i = 0; i < 3; i++) {
             d_cam_pixel_array[pixel_index + i] = colour[i];
         }
