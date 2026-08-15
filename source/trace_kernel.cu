@@ -75,13 +75,15 @@ Metric::terminateRay(float r[4]){
 // Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
 // Overwrites result into v. Assumes Minkowski coordinates.
 __device__ void
-Metric::calculateStartV(float x,
-                        float y,
-                        float g[4][4],
-                        float v[4],
-                        unsigned int d_cam_pixels[2],
-                        float d_cam_quat[4],
-                        float d_cam_fov_conv_factor)
+Metric::calculateStartV(
+    float x,
+    float y,
+    float g[4][4],
+    float v[4],
+    unsigned int d_cam_pixels[2],
+    float d_cam_quat[4],
+    float d_cam_fov_conv_factor
+)
 {
     // Local phi and theta coordinates in the camera's reference frame.
     // Negative in phi because phi increases anticlockwise around the local z-axis.
@@ -159,7 +161,7 @@ __device__ bool
 Schwarzschild::terminateRay(float r[4])
 {
     float r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
-    return r_squared > s_radius * s_radius;
+    return r_squared > (s_radius * s_radius);
 }
 
 // Calculates the scalar product of a velocity with a given metric tensor.
@@ -440,7 +442,8 @@ traceImage(
     float *d_d_phi,
     float *d_d_theta,
     int d_sky_pixels[2],
-    unsigned char *d_sky_map)
+    unsigned char *d_sky_map
+)
 {
     // Currently intended for 8x4 thread blocks.
     // Big thread blocks are more likely to need different numbers of steps (thread divergence)
@@ -540,7 +543,7 @@ traceImage(
     // with good choices of resolutions and kernel sizes.
     if (pixel_valid[threadIdx.x][threadIdx.y]) {
         // TODO: Set pixels to black if they enter a black hole (when viewed from beyond the photon sphere..).
-        int pixel_index { 3 * (pixel_y * d_cam_pixels[0] + pixel_x) };
+        unsigned int pixel_index { 3 * (pixel_y * d_cam_pixels[0] + pixel_x) };
         #pragma unroll
         for (unsigned int i = 0; i < 3; i++) {
             d_cam_pixel_array[pixel_index + i] = colour[i];

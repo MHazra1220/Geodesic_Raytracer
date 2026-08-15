@@ -22,9 +22,9 @@ class Tracer
         ~Tracer();
 
         // Setup functions.
+        void importSkyMap(char skymap_file[]);
         void setCameraCoords(float camera_pos[4], float camera_quat[4]);
         void setCameraResFOV(unsigned int cam_pixels[2], float fov_width);
-        void importSkyMap(char skymap_file[]);
 
         // Calls the raytracing kernel.
         void callTraceKernel();
@@ -39,6 +39,7 @@ class Tracer
         // Dimensions of the sky map in pixels (width, height).
         int h_sky_pixels[2];
         int *d_sky_pixels { nullptr };
+        size_t image_mem_size;
         // Sky map is stored on the host and the device.
         // Unsigned char to represent unsigned 8-bit integers.
         unsigned char *h_sky_map { nullptr };
