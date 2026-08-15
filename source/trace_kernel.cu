@@ -48,6 +48,84 @@ rotateVecByQuat(float vec[4], float rotation_quat[4], float result[4])
     quatProduct(rotation_quat, intermediate_result, result);
 }
 
+__device__ void
+Dev::calculateMetric(float r[4], float g[4][4])
+{
+    g[0][0] = -1.; g[0][1] = 0.; g[0][2] = 0.; g[0][3] = 0.;
+    g[1][0] = 0.; g[1][1] = 1.; g[1][2] = 0.; g[0][3] = 0.;
+    g[2][0] = 0.; g[2][1] = 0.; g[2][2] = 1.; g[2][3] = 0.;
+    g[3][0] = 0.; g[3][1] = 0.; g[3][2] = 0.; g[3][3] = 1.;
+}
+
+__device__ bool
+Dev::terminateRay(float r[4])
+{
+    // Flat spacetime has no obvious termination condition.
+    // Currently just measures whether the ray is beyond some radius.
+    float radius_squared { r[1] * r[1] +
+                           r[2] * r[2] +
+                           r[3] * r[3] };
+    return radius_squared < 100.;
+}
+
+__device__ void
+Dev::calculateStartV(
+    float x,
+    float y,
+    float g[4][4],
+    float v[4],
+    unsigned int d_cam_pixels[2],
+    float d_cam_quat[4],
+    float *d_cam_fov_conv_factor
+)
+{
+    // Local phi and theta coordinates in the camera's reference frame.
+    // Negative in phi because phi increases anticlockwise around the local z-axis.
+    float phi { -((x - 0.5f * d_cam_pixels[0]) * (*d_cam_fov_conv_factor)) };
+    float theta { (y - 0.5f * d_cam_pixels[1]) * (*d_cam_fov_conv_factor) + 0.5f * pi_device };
+    // Minkowski/Cartesian coordinates.
+    float unrotated_v[4];
+    unrotated_v[0] = 0.;
+    unrotated_v[1] = sin(theta)*cos(phi);
+    unrotated_v[2] = sin(theta)*sin(phi);
+    unrotated_v[3] = cos(theta);
+    // Rotate to align with the camera's orientation in the global frame.
+    rotateVecByQuat(unrotated_v, d_cam_quat, v);
+    // Modify the t-component to make the velocity null.
+    makeVNull(v, g);
+}
+
+__device__ void
+Dev::makeVNull(float v[4], float g[4][4])
+{
+    float a { g[0][0] };
+    float b { 0. };
+    float c { 0. };
+
+    #pragma unroll
+    for (int i { 1 }; i < 4; i++)
+    {
+        b += g[0][i]*v[i];
+    }
+    b *= 2.;
+
+    // Calculate c.
+    for (int i { 1 }; i < 4; i++)
+    {
+        float contraction { 0. };
+        #pragma unroll
+        for (int j { 1 }; j < 4; j++)
+        {
+            contraction += g[i][j]*v[j];
+        }
+        c += contraction*v[i];
+    }
+
+    // Take the positive root solution. a = g_00 is usually negative, so this normally makes v[0] negative
+    // in order to evolve the photon backwards from the camera. Makes no difference for static metrics.
+    v[0] = (-b + sqrt(b*b - 4.*a*c)) / (2.*a);
+}
+
 // Function definitions for Metric and its derived classes.
 
 // Stores the calculated independent components in g.
@@ -82,13 +160,13 @@ Metric::calculateStartV(
     float v[4],
     unsigned int d_cam_pixels[2],
     float d_cam_quat[4],
-    float d_cam_fov_conv_factor
+    float *d_cam_fov_conv_factor
 )
 {
     // Local phi and theta coordinates in the camera's reference frame.
     // Negative in phi because phi increases anticlockwise around the local z-axis.
-    float phi { -((x - 0.5f * d_cam_pixels[0]) * (d_cam_fov_conv_factor)) };
-    float theta { (y - 0.5f * d_cam_pixels[1]) * (d_cam_fov_conv_factor) + 0.5f * pi_device };
+    float phi { -((x - 0.5f * d_cam_pixels[0]) * (*d_cam_fov_conv_factor)) };
+    float theta { (y - 0.5f * d_cam_pixels[1]) * (*d_cam_fov_conv_factor) + 0.5f * pi_device };
     // Minkowski/Cartesian coordinates.
     float unrotated_v[4];
     unrotated_v[0] = 0.;
@@ -135,7 +213,7 @@ Metric::makeVNull(float v[4], float g[4][4])
 
 // Schwarzschild metric functions.
 //--------------------------------
-__device__ void
+/*__device__ void
 Schwarzschild::calculateMetric(float r[4], float g[4][4])
 {
     float r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
@@ -162,7 +240,7 @@ Schwarzschild::terminateRay(float r[4])
 {
     float r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
     return r_squared > (s_radius * s_radius);
-}
+}*/
 
 // Calculates the scalar product of a velocity with a given metric tensor.
 // Tries to use as little memory as possible; the goal
@@ -255,7 +333,7 @@ invertSymmetric4Metric(float m[4][4], float m_inv[4][4])
 
 // Calculate metric derivatives at r.
 __device__ void
-calculateMetricDerivs(Metric *metric, float r[4], float g_derivs[4][4][4])
+calculateMetricDerivs(float r[4], float g_derivs[4][4][4])
 {
     // FIXME: Fixed step for now; this needs to be adaptive!
     const float step { 5e-6 };
@@ -270,7 +348,7 @@ calculateMetricDerivs(Metric *metric, float r[4], float g_derivs[4][4][4])
         // Use second-order central difference.
         // Forward step.
         r[alpha] += half_step;
-        metric->calculateMetric(r, g_temp);
+        Dev::calculateMetric(r, g_temp);
         for (int mu { 0 }; mu < 4; mu++) {
             for (int nu { mu }; nu < 4; nu++) {
                 g_derivs[alpha][mu][nu] = g_temp[mu][nu];
@@ -280,7 +358,7 @@ calculateMetricDerivs(Metric *metric, float r[4], float g_derivs[4][4][4])
 
         // Backward step.
         r[alpha] -= step;
-        metric->calculateMetric(r, g_temp);
+        Dev::calculateMetric(r, g_temp);
         for (int mu { 0 }; mu < 4; mu++) {
             for (int nu { mu }; nu < 4; nu++) {
                 g_derivs[alpha][mu][nu] -= g_temp[mu][nu];
@@ -297,13 +375,12 @@ calculateMetricDerivs(Metric *metric, float r[4], float g_derivs[4][4][4])
 // Calculate the Christoffel symbols.
 __device__ void
 calculateChristoffelSymbols(
-    Metric *metric,
     float r[4],
     float g[4][4],
     float c_symbols[4][4][4],
     float g_derivs[4][4][4])
 {
-    calculateMetricDerivs(metric, r, g_derivs);
+    calculateMetricDerivs(r, g_derivs);
     __syncthreads();
 
     float g_inv[4][4];
@@ -328,7 +405,6 @@ calculateChristoffelSymbols(
 // Advances with a step of RKF45.
 __device__ void
 advanceRayRKF45(
-    Metric *metric,
     float x[4],
     float v[4],
     float g[4][4],
@@ -363,8 +439,8 @@ advanceRayRKF45(
 
         // Calculate velocity derivatives with the Christoffel symbols.
         // Need the metric tensor first.
-        metric->calculateMetric(&xv_[0], g);
-        calculateChristoffelSymbols(metric, &xv_[0], g, c_symbols, g_derivs);
+        Dev::calculateMetric(&xv_[0], g);
+        calculateChristoffelSymbols(&xv_[0], g, c_symbols, g_derivs);
         for (int mu { 0 }; mu < 4; mu++) {
             // 4-position derivative is just the 4-velocity.
             k[mu] = xv_[4 + mu] * dl;
@@ -404,13 +480,13 @@ advanceRayRKF45(
     #pragma unroll
     for (int mu { 0 }; mu < 4; mu++) {
         float error { fabsf(xv_5[mu] - xv_4[mu]) };
-        advance = advance && error < tolerance;
+        advance = advance && (error < tolerance);
         bool replace_error { error > max_error };
         max_error = (replace_error * error) + (!replace_error * max_error);
     }
 
     // If stop_advance is true, don't advance no matter what.
-    advance = advance && !stop_advance;
+    advance = advance && (!stop_advance);
 
     // Advance positions and velocities.
     // Doesn't advance if tolerance checks failed or stop_advance is true.
@@ -434,7 +510,6 @@ advanceRayRKF45(
 // Modifies the array d_cam_pixel_array in place with the traced image.
 __global__ void
 traceImage(
-    Metric *metric,
     unsigned int d_cam_pixels[2],
     unsigned char *d_cam_pixel_array,
     float *d_cam_fov_conv_factor,
@@ -490,10 +565,10 @@ traceImage(
     }
 
     // Initial metric tensor at the camera coordinates. Same for all rays.
-    metric->calculateMetric(&xv[0], g);
+    Dev::calculateMetric(&xv[0], g);
     // Calculate ray starting velocity.
-    metric->calculateStartV(static_cast<float>(pixel_x), static_cast<float>(pixel_y), g, &xv[4],
-        d_cam_pixels, &d_cam_coords[4], *d_cam_fov_conv_factor);
+    Dev::calculateStartV(static_cast<float>(pixel_x), static_cast<float>(pixel_y), g, &xv[4],
+        d_cam_pixels, &d_cam_coords[4], d_cam_fov_conv_factor);
 
     // TEST: This might be unnecessary.
     // Potential thread divergence due to Taylor expansions in calculateMetric and calculateStartV.
@@ -503,9 +578,9 @@ traceImage(
     // Should avoid thread divergence.
     int num_pixels_done { 0 };
     while (num_pixels_done != num_valid_pixels) {
-        pixel_done[threadIdx.x][threadIdx.y] = metric->terminateRay(&xv[0]) || pixel_done[threadIdx.x][threadIdx.y];
+        pixel_done[threadIdx.x][threadIdx.y] = Dev::terminateRay(&xv[0]) || pixel_done[threadIdx.x][threadIdx.y];
 
-        advanceRayRKF45(metric, &xv[0], &xv[4], g, &g_derivs[threadIdx.x][threadIdx.y][0],
+        advanceRayRKF45(&xv[0], &xv[4], g, &g_derivs[threadIdx.x][threadIdx.y][0],
             &c_symbols[threadIdx.x][threadIdx.y][0], d_l, &k[threadIdx.x][threadIdx.y][0],
             pixel_done[threadIdx.x][threadIdx.y], tolerance);
 

@@ -131,6 +131,8 @@ Tracer::setCameraResFOV(unsigned int cam_pixels[2], float fov_width)
     // Set camera FOV conversion factor.
     float fov_rad { fov_width * (pi_host / 180.f) };
     float conv_factor { fov_rad / static_cast<float>(h_cam_pixels[0]) };
+    err = cudaMalloc((void**)&d_cam_fov_conv_factor, sizeof(float));
+    checkCudaError(err, std::string("Error: failed to allocate memory for camera FOV conversion factor on device."));
     err = cudaMemcpy(d_cam_fov_conv_factor, &conv_factor, sizeof(float), cudaMemcpyHostToDevice);
     checkCudaError(err, std::string("Error: failed to copy camera FOV to device."));
 }
@@ -153,7 +155,6 @@ Tracer::callTraceKernel()
     dim3 num_blocks(num_blocks_x, num_blocks_y);
 
     traceImage<<<num_blocks, threads_per_block>>>(
-        d_metric,
         d_cam_pixels,
         d_cam_pixel_array,
         d_cam_fov_conv_factor,
