@@ -1,6 +1,6 @@
 #ifndef FLOAT_DEFN
 #define FLOAT_DEFN
 
-using Real = float;
+using Real = double;
 
 #endif

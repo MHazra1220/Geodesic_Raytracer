@@ -1,6 +1,7 @@
 #ifndef TRACER
 #define TRACER
 
+#include "utilities/float_defn.h"
 #include "trace_kernel_utils.h"
 
 /*
@@ -18,13 +19,13 @@
 class Tracer
 {
     public:
-        Tracer(float initial_pos[4], float initial_quat[4], unsigned int cam_pixels[2], float cam_fov, char skymap_file[]);
+        Tracer(Real initial_pos[4], Real initial_quat[4], unsigned int cam_pixels[2], Real cam_fov, char skymap_file[]);
         ~Tracer();
 
         // Setup functions.
         void importSkyMap(char skymap_file[]);
-        void setCameraCoords(float camera_pos[4], float camera_quat[4]);
-        void setCameraResFOV(unsigned int input_cam_pixels[2], float fov_width);
+        void setCameraCoords(Real camera_pos[4], Real camera_quat[4]);
+        void setCameraResFOV(unsigned int input_cam_pixels[2], Real fov_width);
 
         void traceImage();
         void saveTracedImage(char output_path[]);
@@ -39,17 +40,17 @@ class Tracer
         // Unsigned char to represent unsigned 8-bit integers.
         unsigned char *sky_map { nullptr };
         // Intervals between azimuthal and polar angles in radians.
-        float d_phi;
-        float d_theta;
+        Real d_phi;
+        Real d_theta;
         // Camera location and orientation.
-        float cam_pos[4];
-        float cam_quat[4];
+        Real cam_pos[4];
+        Real cam_quat[4];
         // Camera dimensions.
         unsigned int cam_pixels[2];
         unsigned char *cam_pixel_array { nullptr };
-        float cam_fov_conv_factor;
+        Real cam_fov_conv_factor;
 
-        Metric metric;
+        Schwarzschild metric;
 };
 
 #endif // TRACER

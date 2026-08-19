@@ -2,43 +2,44 @@
 #include <cmath>
 #include <omp.h>
 
+#include "utilities/float_defn.h"
 #include "trace_kernel_utils.h"
 
 // Constants for RKF45 method. Have to be in global namespace, unfortunately.
 
-__device__ __constant__ float A[6] { 0., 2./9., 1./3., 0.75, 1., 5./6. };
-__device__ __constant__ float B_0[1] { 0. };    // B_0 should not be used! Exists for consistency.
-__device__ __constant__ float B_1[1] { 2./9. };
-__device__ __constant__ float B_2[2] { 1./12., 0.25 };
-__device__ __constant__ float B_3[3] { 69./128., -243./128., 135./64. };
-__device__ __constant__ float B_4[4] { -17./12., 27./4., -27./5., 16./15. };
-__device__ __constant__ float B_5[5] { 65./432., -5./16., 13./16., 4./27., 5./144. };
-__device__ __constant__ float *B[6] { &B_0[0], &B_1[0], &B_2[0], &B_3[0], &B_4[0], &B_5[0] };
-__device__ __constant__ float c_k_4[6] { 1./9., 0., 9./20., 16./45., 1./12., 0. };
-__device__ __constant__ float c_k_5[6] { 47./450., 0., 12./25., 32./225., 1./30., 6./25. };
+__device__ __constant__ Real A[6] { 0., 2./9., 1./3., 0.75, 1., 5./6. };
+__device__ __constant__ Real B_0[1] { 0. };    // B_0 should not be used! Exists for consistency.
+__device__ __constant__ Real B_1[1] { 2./9. };
+__device__ __constant__ Real B_2[2] { 1./12., 0.25 };
+__device__ __constant__ Real B_3[3] { 69./128., -243./128., 135./64. };
+__device__ __constant__ Real B_4[4] { -17./12., 27./4., -27./5., 16./15. };
+__device__ __constant__ Real B_5[5] { 65./432., -5./16., 13./16., 4./27., 5./144. };
+__device__ __constant__ Real *B[6] { &B_0[0], &B_1[0], &B_2[0], &B_3[0], &B_4[0], &B_5[0] };
+__device__ __constant__ Real c_k_4[6] { 1./9., 0., 9./20., 16./45., 1./12., 0. };
+__device__ __constant__ Real c_k_5[6] { 47./450., 0., 12./25., 32./225., 1./30., 6./25. };
 
 namespace RKF45 {
-    float A[6] { 0., 2./9., 1./3., 0.75, 1., 5./6. };
-    float B_0[1] { 0. };    // B_0 should not be used! Exists for consistency.
-    float B_1[1] { 2./9. };
-    float B_2[2] { 1./12., 0.25 };
-    float B_3[3] { 69./128., -243./128., 135./64. };
-    float B_4[4] { -17./12., 27./4., -27./5., 16./15. };
-    float B_5[5] { 65./432., -5./16., 13./16., 4./27., 5./144. };
-    float *B[6] { &B_0[0], &B_1[0], &B_2[0], &B_3[0], &B_4[0], &B_5[0] };
-    float c_k_4[6] { 1./9., 0., 9./20., 16./45., 1./12., 0. };
-    float c_k_5[6] { 47./450., 0., 12./25., 32./225., 1./30., 6./25. };
+    Real A[6] { 0., 2./9., 1./3., 0.75, 1., 5./6. };
+    Real B_0[1] { 0. };    // B_0 should not be used! Exists for consistency.
+    Real B_1[1] { 2./9. };
+    Real B_2[2] { 1./12., 0.25 };
+    Real B_3[3] { 69./128., -243./128., 135./64. };
+    Real B_4[4] { -17./12., 27./4., -27./5., 16./15. };
+    Real B_5[5] { 65./432., -5./16., 13./16., 4./27., 5./144. };
+    Real *B[6] { &B_0[0], &B_1[0], &B_2[0], &B_3[0], &B_4[0], &B_5[0] };
+    Real c_k_4[6] { 1./9., 0., 9./20., 16./45., 1./12., 0. };
+    Real c_k_5[6] { 47./450., 0., 12./25., 32./225., 1./30., 6./25. };
 };
 
 // Quaternionic arithmetic functions.
 
 // Calculate the Hamilton (quaternionic) product of two quaternions.
-__host__ __device__ void
-quatProduct(float u[4], float v[4], float result[4])
+void
+quatProduct(Real u[4], Real v[4], Real result[4])
 {
     result[0] = u[0]*v[0] - (u[1]*v[1] + u[2]*v[2] + u[3]*v[3]);
     // Cross product of the vector components of u and v is needed.
-    float cross[3];
+    Real cross[3];
     cross[0] = u[2]*v[3] - u[3]*v[2];
     cross[1] = u[3]*v[1] - u[1]*v[3];
     cross[2] = u[1]*v[2] - u[2]*v[1];
@@ -51,16 +52,16 @@ quatProduct(float u[4], float v[4], float result[4])
 
 // Rotates a 3D Cartesian vector, vec (a pure quaternion), by rotation_quat.
 // result will be the rotated vector represented as a pure quaternion.
-__host__ __device__ void
-rotateVecByQuat(float vec[4], float rotation_quat[4], float result[4])
+void
+rotateVecByQuat(Real vec[4], Real rotation_quat[4], Real result[4])
 {
     // Assume that rotation_quat is normalised; checking isn't worth the cost.
-    float rotation_quat_inverse[4];
+    Real rotation_quat_inverse[4];
     rotation_quat_inverse[0] = rotation_quat[0];
     rotation_quat_inverse[1] = -rotation_quat[1];
     rotation_quat_inverse[2] = -rotation_quat[2];
     rotation_quat_inverse[3] = -rotation_quat[3];
-    float intermediate_result[4];
+    Real intermediate_result[4];
     quatProduct(vec, rotation_quat_inverse, intermediate_result);
     quatProduct(rotation_quat, intermediate_result, result);
 }
@@ -69,8 +70,8 @@ rotateVecByQuat(float vec[4], float rotation_quat[4], float result[4])
 
 // Stores the calculated independent components in g.
 // Flat/Minkowski spacetime; same everywhere.
-__host__ __device__ void
-Metric::calculateMetric(float r[4], float g[4][4])
+void
+Metric::calculateMetric(Real r[4], Real g[4][4])
 {
     g[0][0] = -1.; g[0][1] = 0.; g[0][2] = 0.; g[0][3] = 0.;
     g[1][0] = 0.; g[1][1] = 1.; g[1][2] = 0.; g[0][3] = 0.;
@@ -79,35 +80,42 @@ Metric::calculateMetric(float r[4], float g[4][4])
 }
 
 // Returns whether to terminate a photon passing through a point in this metric.
-__host__ __device__ bool
-Metric::terminateRay(float r[4]){
+bool
+Metric::terminateRay(Real r[4])
+{
     // Flat spacetime has no obvious termination condition.
     // Currently just measures whether the ray is beyond some radius.
-    float radius_squared { r[1] * r[1] +
+    Real radius_squared { r[1] * r[1] +
                            r[2] * r[2] +
                            r[3] * r[3] };
-    return radius_squared < 100.;
+    return radius_squared > outer_limit_squared;
+}
+
+bool
+Metric::setToBlack(Real r[4])
+{
+    return false;
 }
 
 // Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
-// Overwrites result into v. Assumes Minkowski coordinates.
-__host__ void
+// Overwrites result into v. Assumes Minkowski/Cartesian coordinates.
+void
 Metric::calculateStartV(
-    float x,
-    float y,
-    float g[4][4],
-    float v[4],
+    Real x,
+    Real y,
+    Real g[4][4],
+    Real v[4],
     unsigned int cam_pixels[2],
-    float cam_quat[4],
-    float &cam_fov_conv_factor
+    Real cam_quat[4],
+    Real &cam_fov_conv_factor
 )
 {
     // Local phi and theta coordinates in the camera's reference frame.
     // Negative in phi because phi increases anticlockwise around the local z-axis.
-    float phi { -((x - 0.5f * cam_pixels[0]) * (cam_fov_conv_factor)) };
-    float theta { (y - 0.5f * cam_pixels[1]) * (cam_fov_conv_factor) + 0.5f * pi_host };
+    Real phi { -((x - 0.5 * cam_pixels[0]) * (cam_fov_conv_factor)) };
+    Real theta { (y - 0.5 * cam_pixels[1]) * (cam_fov_conv_factor) + 0.5 * pi_host };
     // Minkowski/Cartesian coordinates.
-    float unrotated_v[4];
+    Real unrotated_v[4];
     unrotated_v[0] = 0.;
     unrotated_v[1] = std::sin(theta) * std::cos(phi);
     unrotated_v[2] = std::sin(theta) * std::sin(phi);
@@ -119,12 +127,12 @@ Metric::calculateStartV(
 }
 
 // Make a velocity vector null (assuming Minkowski coordinates).
-__host__ void
-Metric::makeVNull(float v[4], float g[4][4])
+void
+Metric::makeVNull(Real v[4], Real g[4][4])
 {
-    float a { g[0][0] };
-    float b { 0. };
-    float c { 0. };
+    Real a { g[0][0] };
+    Real b { 0. };
+    Real c { 0. };
 
     #pragma unroll
     for (int i { 1 }; i < 4; i++)
@@ -136,7 +144,7 @@ Metric::makeVNull(float v[4], float g[4][4])
     // Calculate c.
     for (int i { 1 }; i < 4; i++)
     {
-        float contraction { 0. };
+        Real contraction { 0. };
         #pragma unroll
         for (int j { 1 }; j < 4; j++)
         {
@@ -152,12 +160,12 @@ Metric::makeVNull(float v[4], float g[4][4])
 
 // Schwarzschild metric functions.
 //--------------------------------
-/*__device__ void
-Schwarzschild::calculateMetric(float r[4], float g[4][4])
+void
+Schwarzschild::calculateMetric(Real r[4], Real g[4][4])
 {
-    float r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
-    float r_mag { sqrt(r_squared) };
-    float mult_factor { s_radius / (r_squared * (r_mag - s_radius)) };
+    Real r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
+    Real r_mag { std::sqrt(r_squared) };
+    Real mult_factor { s_radius / (r_squared * (r_mag - s_radius)) };
     for (int mu { 1 }; mu < 4; mu++)
     {
         g[0][mu] = 0.;
@@ -174,42 +182,48 @@ Schwarzschild::calculateMetric(float r[4], float g[4][4])
     g[3][3] += 1.;
 }
 
-__device__ bool
-Schwarzschild::terminateRay(float r[4])
+bool
+Schwarzschild::terminateRay(Real r[4])
 {
-    float r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
-    return r_squared > (s_radius * s_radius);
-}*/
+    Real r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
+    return (r_squared < photon_sphere_squared) || (r_squared > outer_limit_squared);
+}
+
+bool
+Schwarzschild::setToBlack(Real r[4])
+{
+    Real r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
+    // Fallen into the photon sphere/black hole if true.
+    return r_squared < photon_sphere_squared;
+}
 
 // Calculates the scalar product of a velocity with a given metric tensor.
 // Tries to use as little memory as possible; the goal
 // is to minimize register occupancy, not computation.
-__host__ __device__ float
-scalarProduct(float v[4], float g[4][4])
+Real
+scalarProduct(Real v[4], Real g[4][4])
 {
-    float result { 0. };
+    Real result { 0. };
     for (int i { 0 }; i < 4; i++)
     {
-        float intermediate { 0. };
+        Real intermediate { 0. };
         // One component of the matrix product of g with v.
         #pragma unroll
         for (int j { 0 }; j < 4; j++)
         {
-            intermediate += g[i][j]*v[j];
+            intermediate += g[i][j] * v[j];
         }
-        result += v[i]*intermediate;
+        result += v[i] * intermediate;
     }
     return result;
 }
 
 // Inverts a symmetric 4x4 metric; needed to get the inverse metric for the Christoffel symbols.
-__host__ __device__ void
-invertSymmetric4Metric(float m[4][4], float m_inv[4][4])
+void
+invertSymmetric4Metric(Real m[4][4], Real m_inv[4][4])
 {
     // Computationally fastest way for such a small system is probably
     // a hard implementation of the 4x4 inverse.
-    // For the love of God, don't make a typo here...
-    // TODO: This needs checking!
     m_inv[0][0] = m[1][1]*m[2][2]*m[3][3] + m[1][2]*m[2][3]*m[3][1] +
         m[1][3]*m[2][1]*m[3][2] - m[1][1]*m[2][3]*m[3][2] -
         m[1][2]*m[2][1]*m[3][3] - m[1][3]*m[2][2]*m[3][1];
@@ -249,10 +263,10 @@ invertSymmetric4Metric(float m[4][4], float m_inv[4][4])
 
     // The scalar product of the metric with its inverse should give the number of dimensions, i.e. 4.
     // The metric must already be correctly normalised.
-    float sum { 0. };
+    Real sum { 0. };
     for (int i { 0 }; i < 4; i++) {
         sum += m_inv[i][i] * m[i][i];
-        float intermediate_sum { 0. };
+        Real intermediate_sum { 0. };
         for (int j { i + 1 }; j < 4; j++) {
             intermediate_sum += m_inv[i][j] * m[i][j];
         }
@@ -260,7 +274,7 @@ invertSymmetric4Metric(float m[4][4], float m_inv[4][4])
     }
 
     // Scale inverse metric appropriately.
-    float scale_factor { 4.f / sum };
+    Real scale_factor { 4.f / sum };
     #pragma unroll
     for (int i { 0 }; i < 4; i++) {
         #pragma unroll
@@ -271,18 +285,18 @@ invertSymmetric4Metric(float m[4][4], float m_inv[4][4])
 }
 
 // Calculate metric derivatives at r.
-__host__ __device__ void
-calculateMetricDerivs(Metric *metric, float r[4], float g_derivs[4][4][4])
+void
+calculateMetricDerivs(Metric *metric, Real r[4], Real g_derivs[4][4][4])
 {
     // FIXME: Fixed step for now; this needs to be adaptive!
-    const float step { 5e-6 };
-    const float half_step { 0.5 * step };
-    const float inv_step { 1. / step };
+    const Real step { 5e-6 };
+    const Real half_step { 0.5 * step };
+    const Real inv_step { 1. / step };
 
     // Calculate metric derivatives.
     // Forward step.
     for (int alpha { 0 }; alpha < 4; alpha++) {
-        float g_temp[4][4];
+        Real g_temp[4][4];
 
         // Use second-order central difference.
         // Forward step.
@@ -312,24 +326,24 @@ calculateMetricDerivs(Metric *metric, float r[4], float g_derivs[4][4][4])
 }
 
 // Calculate the Christoffel symbols.
-__host__ __device__ void
+void
 calculateChristoffelSymbols(
     Metric *metric,
-    float r[4],
-    float g[4][4],
-    float c_symbols[4][4][4],
-    float g_derivs[4][4][4])
+    Real r[4],
+    Real g[4][4],
+    Real c_symbols[4][4][4],
+    Real g_derivs[4][4][4])
 {
     calculateMetricDerivs(metric, r, g_derivs);
 
-    float g_inv[4][4];
+    Real g_inv[4][4];
     invertSymmetric4Metric(g, g_inv);
 
     // Calculate the Christoffel symbols.
     for (int alpha { 0 }; alpha < 4; alpha++) {
         for (int mu { 0 }; mu < 4; mu++) {
             for (int nu { mu }; nu < 4; nu++) {
-                float sum { 0. };
+                Real sum { 0. };
                 for (int beta { 0 }; beta < 4; beta++) {
                     sum += g_inv[alpha][beta] * (g_derivs[nu][beta][mu] + g_derivs[mu][nu][beta] - g_derivs[beta][mu][nu]);
                 }
@@ -342,42 +356,42 @@ calculateChristoffelSymbols(
 }
 
 // Advances with a step of RKF45.
-__host__ void
+void
 advanceRayRKF45(
     Metric *metric,
-    float x[4],
-    float v[4],
-    float &dl,
-    const float &tolerance
+    Real x[4],
+    Real v[4],
+    Real &dl,
+    const Real &tolerance
 )
 {
-    const float max_dl { 5. };
+    const Real max_dl { 5. };
 
-    float xv_4[4];
-    float xv_5[8];
+    Real xv_4[4];
+    Real xv_5[8];
     bool success { false };
 
     while (!success) {
         success = true;
 
         // Metric tensor.
-        float g[4][4];
+        Real g[4][4];
         // Intermediate derivatives for RKF45.
-        float k_all[6][8];
+        Real k_all[6][8];
         // Christoffel symbols.
-        float c_symbols[4][4][4];
+        Real c_symbols[4][4][4];
         // Metric derivatives.
-        float g_derivs[4][4][4];
+        Real g_derivs[4][4][4];
 
         // Calculate the 6 k-vectors.
         for (int k_num { 0 }; k_num < 6; k_num++) {
             // _ marks variables with temporary offsets.
-            float xv_[8] { x[0], x[1], x[2], x[3], v[0], v[1], v[2], v[3] };
+            Real xv_[8] { x[0], x[1], x[2], x[3], v[0], v[1], v[2], v[3] };
             // No need to modify the affine parameter;
             // it has no effect on the derivative function (for now?).
 
             // Loop does nothing for k_0.
-            float *B_set { RKF45::B[k_num] };
+            Real *B_set { RKF45::B[k_num] };
             for (int i { 0 }; i < k_num; i++) {
                 #pragma unroll
                 for (int mu { 0 }; mu < 8; mu++) {
@@ -386,7 +400,7 @@ advanceRayRKF45(
             }
 
             // Current set of derivatives to modify.
-            float *k { &k_all[k_num][0] };
+            Real *k { &k_all[k_num][0] };
 
             // Calculate velocity derivatives with the Christoffel symbols.
             // Need the metric tensor first.
@@ -396,7 +410,7 @@ advanceRayRKF45(
                 // 4-position derivative is just the 4-velocity.
                 k[mu] = xv_[4 + mu] * dl;
 
-                float component { 0. };
+                Real component { 0. };
                 #pragma unroll
                 for (int nu { 0 }; nu < 4; nu++) {
                     // Sum the diagonal first.
@@ -430,10 +444,10 @@ advanceRayRKF45(
 
         // Test truncation error tolerances in position.
         // bool advance { true };
-        float max_error { 0. };
+        Real max_error { 0. };
 
         // for (int mu { 0 }; mu < 4; mu++) {
-        //     float error { fabsf(xv_5[mu] - xv_4[mu]) };
+        //     Real error { fabsf(xv_5[mu] - xv_4[mu]) };
         //     advance = advance && (error < tolerance);
         //     bool replace_error { error > max_error };
         //     max_error = (replace_error * error) + (!replace_error * max_error);
@@ -442,7 +456,7 @@ advanceRayRKF45(
         // advance = advance && (!stop_advance);
 
         for (int mu { 0 }; mu < 4; mu++) {
-            float error { std::abs(xv_5[mu] - xv_4[mu]) };
+            Real error { std::abs(xv_5[mu] - xv_4[mu]) };
             if (error > max_error) max_error = error;
         }
 
@@ -468,16 +482,16 @@ void traceImageRKF45(
     Metric *metric,
     unsigned int cam_pixels[2],
     unsigned char *cam_pixel_array,
-    float &cam_fov_conv_factor,
-    float cam_pos[4],
-    float cam_quat[4],
-    float &d_phi,
-    float &d_theta,
+    Real &cam_fov_conv_factor,
+    Real cam_pos[4],
+    Real cam_quat[4],
+    Real &d_phi,
+    Real &d_theta,
     int sky_pixels[2],
     unsigned char *sky_map
 )
 {
-    const float tolerance { 1e-4 };
+    const Real tolerance { 1e-4 };
     unsigned int num_pixels = cam_pixels[0] * cam_pixels[1];
 
     #pragma omp parallel for
@@ -487,15 +501,15 @@ void traceImageRKF45(
 
         // Store coordinates and velocity together.
         // First 4 numbers are the 4-position, last 4 are the 4-velocity.
-        float xv[8];
+        Real xv[8];
         // Metric tensor.
-        float g[4][4];
+        Real g[4][4];
 
         // Initial metric tensor and starting velocity.
         metric->calculateMetric(&xv[0], g);
         metric->calculateStartV(
-            static_cast<float>(pixel_x),
-            static_cast<float>(pixel_y),
+            static_cast<Real>(pixel_x),
+            static_cast<Real>(pixel_y),
             g,
             &xv[4],
             cam_pixels,
@@ -504,28 +518,21 @@ void traceImageRKF45(
         );
 
         // Set initial step length to maximum; it will probably be cut down automatically.
-        float dl { 5. };
-        if (i == 0) {
-            for (int j { 0 }; j < 4; j++) {
-                std::cout << xv[4 + j] << "\t";
-            }
-            std::cout << "\n";
-        }
+        Real dl { 5. };
 
         // Main raytracing loop.
         while (!metric->terminateRay(&xv[0])) {
             if (i == 0) {
-                std::cout << "TEST" << "\n";
+                std::cout << xv[5] << "\n";
             }
             advanceRayRKF45(metric, &xv[0], &xv[4], dl, tolerance);
         }
 
         // Use the velocity to take the photon to infinity and sample the sky box.
-        float phi { std::atan2(xv[6], xv[5]) };
+        Real phi { std::atan2(xv[6], xv[5]) };
         // Move into the range 0 to 2*pi if phi < 0.
         phi += 2. * pi_host * (phi < 0.);
-        // float theta { std::acos(xv[7] * rnorm3df(xv[5], xv[6], xv[7])) };
-        float theta { std::acos(xv[7]) / (std::sqrt(xv[5] * xv[5] +
+        Real theta { std::acos(xv[7]) / (std::sqrt(xv[5] * xv[5] +
                                                      xv[6] * xv[6] +
                                                      xv[7] * xv[7]))};
 
@@ -536,14 +543,21 @@ void traceImageRKF45(
         int sky_y { (int)(theta / d_theta) };
         // Address of the pixel RGB colour.
         unsigned char *colour { &sky_map[3 * (sky_y * sky_pixels[0] + sky_x)] };
+        // Probably fallen into a photon sphere/black hole if true.
+        bool set_to_black = metric->setToBlack(&xv[0]);
 
         // Write camera image.
         // Some thread divergence may occur here in a GPU rewrite.
-        // TODO: Set pixels to black if they enter a black hole (when viewed from beyond the photon sphere..).
+        // TODO: Set pixels to black if they enter a black hole (when viewed from beyond the photon sphere).
         unsigned int pixel_index { 3 * (pixel_y * cam_pixels[0] + pixel_x) };
         #pragma unroll
         for (unsigned int j = 0; j < 3; j++) {
-            cam_pixel_array[pixel_index + j] = colour[j];
+            if (!set_to_black) {
+                cam_pixel_array[pixel_index + j] = colour[j];
+            }
+            else {
+                cam_pixel_array[pixel_index + j] = 0;
+            }
         }
     }
 }
@@ -557,10 +571,10 @@ void traceImageRKF45(
 traceImage(
     unsigned int d_cam_pixels[2],
     unsigned char *d_cam_pixel_array,
-    float *d_cam_fov_conv_factor,
-    float d_cam_coords[8],
-    float *d_d_phi,
-    float *d_d_theta,
+    Real *d_cam_fov_conv_factor,
+    Real d_cam_coords[8],
+    Real *d_d_phi,
+    Real *d_d_theta,
     int d_sky_pixels[2],
     unsigned char *d_sky_map
 )
@@ -569,22 +583,22 @@ traceImage(
     // Big thread blocks are more likely to need different numbers of steps (thread divergence)
     // and require more iteration over the shared array pixel_done.
 
-    const float tolerance { 1e-4 };
+    const Real tolerance { 1e-4 };
     // Set initial step length to maximum; it will probably be cut down automatically.
-    float d_l { 5. };
+    Real d_l { 5. };
 
     // 32 bytes each.
     __shared__ bool pixel_valid[8][4];
     __shared__ bool pixel_done[8][4];
     // Metric tensor. Should be okay to keep this in registers (64 bytes).
-    float g[4][4];
+    Real g[4][4];
     // Intermediate derivatives for RKF45.
-    __shared__ float k[8][4][6][8];
+    __shared__ Real k[8][4][6][8];
     // Keep the Christoffel symbols in shared memory for safety. These can probably be stored
     // safely in registers (256 bytes per core, 8 KB per block), but it might be bad on older GPUs.
-    __shared__ float c_symbols[8][4][4][4][4];
+    __shared__ Real c_symbols[8][4][4][4][4];
     // Metric derivatives.
-    __shared__ float g_derivs[8][4][4][4][4];
+    __shared__ Real g_derivs[8][4][4][4][4];
 
     unsigned int pixel_x { blockIdx.x * blockDim.x + threadIdx.x };
     unsigned int pixel_y { blockIdx.y * blockDim.y + threadIdx.y };
@@ -603,7 +617,7 @@ traceImage(
 
     // Store coordinates and velocity together.
     // First 4 numbers are the 4-position, last 4 are the 4-velocity.
-    float xv[8];
+    Real xv[8];
     #pragma unroll
     for (int i { 0 }; i < 4; i++) {
         xv[i] = d_cam_coords[i];
@@ -612,7 +626,7 @@ traceImage(
     // Initial metric tensor at the camera coordinates. Same for all rays.
     Dev::calculateMetric(&xv[0], g);
     // Calculate ray starting velocity.
-    Dev::calculateStartV(static_cast<float>(pixel_x), static_cast<float>(pixel_y), g, &xv[4],
+    Dev::calculateStartV(static_cast<Real>(pixel_x), static_cast<Real>(pixel_y), g, &xv[4],
         d_cam_pixels, &d_cam_coords[4], d_cam_fov_conv_factor);
 
     // TEST: This might be unnecessary.
@@ -644,10 +658,10 @@ traceImage(
     }
 
     // Use the velocity to take the photon to infinity and sample the sky box.
-    float phi { atan2(xv[6], xv[5]) };
+    Real phi { atan2(xv[6], xv[5]) };
     // Move into the range 0 to 2*pi if phi < 0.
     phi += 2. * pi_device * (phi < 0.);
-    float theta { acos(xv[7] * rnorm3df(xv[5], xv[6], xv[7])) };
+    Real theta { acos(xv[7] * rnorm3df(xv[5], xv[6], xv[7])) };
 
     // Convert to pixel locations on the sky map; floor the number.
     // Phi goes anticlockwise, so 2.*pi - phi transforms it to stop

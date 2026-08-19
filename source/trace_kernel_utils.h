@@ -7,16 +7,16 @@
 // to put everything the raytracing kernel uses in a single place.
 
 // pi is needed by the host when importing sky maps and used by the device when getting pixels.
-const float pi_host = 3.141592653589793;
-__device__ __constant__ float pi_device = 3.141592653589793;
+const Real pi_host = 3.141592653589793;
+__device__ __constant__ Real pi_device = 3.141592653589793;
 
 // Quaternionic arithmetic functions.
 
 // Calculate the Hamilton (quaternionic) product of two quaternions.
-__host__ __device__ void quatProduct(float u[4], float v[4], float result[4]);
+void quatProduct(Real u[4], Real v[4], Real result[4]);
 // Rotates a 3D Cartesian vector, vec (a pure quaternion), by rotation_quat.
 // result will be the rotated vector represented as a pure quaternion.
-__host__ __device__ void rotateVecByQuat(float vec[4], float rotation_quat[4], float result[4]);
+void rotateVecByQuat(Real vec[4], Real rotation_quat[4], Real result[4]);
 
 // Should have copies between the host and device.
 class Metric
@@ -24,69 +24,77 @@ class Metric
     public:
         // Default metric is flat spacetime with Minkowski coordinates.
         // Calculates the metric tensor at r and stores it in g.
-        __host__ __device__ void calculateMetric(float r[4], float g[4][4]);
+        virtual void calculateMetric(Real r[4], Real g[4][4]);
         // Returns whether to terminate a photon passing going through this metric.
-        __host__ __device__ bool terminateRay(float r[4]);
+        virtual bool terminateRay(Real r[4]);
         // Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
         // Overwrites result into v. Assumes Minkowski coordinates.
-        __host__ void calculateStartV(
-            float x,
-            float y,
-            float g[4][4],
-            float v[4],
+        // Needed in some metrics (e.g. falling into a black hole).
+        virtual bool setToBlack(Real r[4]);
+        void calculateStartV(
+            Real x,
+            Real y,
+            Real g[4][4],
+            Real v[4],
             unsigned int cam_pixels[2],
-            float cam_quat[4],
-            float &cam_fov_conv_factor
+            Real cam_quat[4],
+            Real &cam_fov_conv_factor
         );
         // Makes a velocity vector null.
-        __host__ void makeVNull(float v[4], float g[4][4]);
+        void makeVNull(Real v[4], Real g[4][4]);
+
+    private:
+        const Real outer_limit_squared { 15. * 15. };
 };
 
-/*class Schwarzschild : public Metric
+class Schwarzschild : public Metric
 {
     public:
         // Schwarzschild spacetime.
         // Overwrite functions specific to this metric.
-        __device__ void calculateMetric(float r[4], float g[4][4]) override;
-        __device__ bool terminateRay(float r[4]) override;
+        void calculateMetric(Real r[4], Real g[4][4]) override;
+        bool terminateRay(Real r[4]) override;
+        bool setToBlack(Real r[4]) override;
 
     private:
         // Black hole radius (Schwarzschild radius).
         // Assumed fixed for now.
-        const float s_radius { 1. };
-        const float s_radius_squared { s_radius * s_radius };
-};*/
+        const Real s_radius { 1. };
+        const Real photon_sphere_radius { 1.5 * s_radius };
+        const Real photon_sphere_squared { photon_sphere_radius * photon_sphere_radius };
+        const Real outer_limit_squared { 25. * 25. };
+};
 
 // Calculates the scalar product of a velocity with in some metric.
-__host__ __device__ float scalarProduct(float v[4], float g[4][4]);
+Real scalarProduct(Real v[4], Real g[4][4]);
 
 // Inverts a symmetric 4x4 metric; needed to get the inverse metric for the Christoffel symbols.
-__host__ __device__ void invertSymmetric4Metric(float m[4][4], float m_inv[4][4]);
+void invertSymmetric4Metric(Real m[4][4], Real m_inv[4][4]);
 
 // Calculate metric derivatives at r.
-__host__ __device__ void calculateMetricDerivs(Metric *metric, float r[4], float g_derivs[4][4][4]);
+void calculateMetricDerivs(Metric *metric, Real r[4], Real g_derivs[4][4][4]);
 
 // Calculate the Christoffel symbols.
-__host__ __device__ void calculateChristoffelSymbols(Metric *metric, float r[4], float g[4][4], float c_symbols[4][4][4], float g_derivs[4][4][4]);
+void calculateChristoffelSymbols(Metric *metric, Real r[4], Real g[4][4], Real c_symbols[4][4][4], Real g_derivs[4][4][4]);
 
 // Advances with a step of RKF45.
-__host__ void advanceRayRKF45(
+void advanceRayRKF45(
     Metric *metric,
-    float x[4],
-    float v[4],
-    float &dl,
-    const float &tolerance
+    Real x[4],
+    Real v[4],
+    Real &dl,
+    const Real &tolerance
 );
 
 void traceImageRKF45(
     Metric *metric,
     unsigned int cam_pixels[2],
     unsigned char *cam_pixel_array,
-    float &cam_fov_conv_factor,
-    float cam_pos[4],
-    float cam_quat[4],
-    float &d_phi,
-    float &d_theta,
+    Real &cam_fov_conv_factor,
+    Real cam_pos[4],
+    Real cam_quat[4],
+    Real &d_phi,
+    Real &d_theta,
     int sky_pixels[2],
     unsigned char *sky_map
 );
@@ -95,10 +103,10 @@ void traceImageRKF45(
 /*__global__ void traceImage(
     unsigned int d_cam_pixels[2],
     unsigned char *d_cam_pixel_array,
-    float *d_cam_fov_conv_factor,
-    float d_cam_coords[8],
-    float *d_d_phi,
-    float *d_d_theta,
+    Real *d_cam_fov_conv_factor,
+    Real d_cam_coords[8],
+    Real *d_d_phi,
+    Real *d_d_theta,
     int d_sky_pixels[2],
     unsigned char *d_sky_map
 );*/

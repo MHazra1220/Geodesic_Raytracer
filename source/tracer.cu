@@ -1,3 +1,4 @@
+#include "utilities/float_defn.h"
 #include "tracer.h"
 #include "trace_kernel_utils.h"
 
@@ -20,7 +21,7 @@ checkCudaError(cudaError_t err, std::string error_msg)
     if (err != cudaSuccess) throw std::runtime_error(error_msg);
 }
 
-Tracer::Tracer(float initial_pos[4], float initial_quat[4], unsigned int cam_pixels[2], float cam_fov, char skymap_file[])
+Tracer::Tracer(Real initial_pos[4], Real initial_quat[4], unsigned int cam_pixels[2], Real cam_fov, char skymap_file[])
 {
     importSkyMap(skymap_file);
     setCameraCoords(initial_pos, initial_quat);
@@ -42,12 +43,12 @@ Tracer::importSkyMap(char skymap_file[])
     sky_map = stbi_load(skymap_file, &sky_pixels[0], &sky_pixels[1], &byte_depth, 3);
     if (sky_map == nullptr) throw std::runtime_error("Error: cannot load skymap file.");
 
-    d_phi = (2. * pi_host) / static_cast<float>(sky_pixels[0]);
-    d_theta = pi_host / static_cast<float>(sky_pixels[1]);
+    d_phi = (2. * pi_host) / static_cast<Real>(sky_pixels[0]);
+    d_theta = pi_host / static_cast<Real>(sky_pixels[1]);
 }
 
 void
-Tracer::setCameraCoords(float camera_pos[4], float camera_quat[4])
+Tracer::setCameraCoords(Real camera_pos[4], Real camera_quat[4])
 {
     #pragma unroll
     for (int i { 0 }; i < 4; i++)
@@ -58,7 +59,7 @@ Tracer::setCameraCoords(float camera_pos[4], float camera_quat[4])
 }
 
 void
-Tracer::setCameraResFOV(unsigned int input_cam_pixels[2], float fov_width)
+Tracer::setCameraResFOV(unsigned int input_cam_pixels[2], Real fov_width)
 {
     cam_pixels[0] = input_cam_pixels[0];
     cam_pixels[1] = input_cam_pixels[1];
@@ -70,8 +71,8 @@ Tracer::setCameraResFOV(unsigned int input_cam_pixels[2], float fov_width)
     cam_pixel_array = (unsigned char*)malloc(image_mem_size);
 
     // Set camera FOV conversion factor.
-    float fov_rad { fov_width * (pi_host / 180.f) };
-    cam_fov_conv_factor = fov_rad / static_cast<float>(cam_pixels[0]);
+    Real fov_rad { fov_width * (pi_host / 180.f) };
+    cam_fov_conv_factor = fov_rad / static_cast<Real>(cam_pixels[0]);
 }
 
 void
