@@ -11,25 +11,10 @@ __device__ __constant__ float pi_device = 3.141592653589793;
 // Quaternionic arithmetic functions.
 
 // Calculate the Hamilton (quaternionic) product of two quaternions.
-__device__ void quatProduct(float u[4], float v[4], float result[4]);
+__host__ __device__ void quatProduct(float u[4], float v[4], float result[4]);
 // Rotates a 3D Cartesian vector, vec (a pure quaternion), by rotation_quat.
 // result will be the rotated vector represented as a pure quaternion.
-__device__ void rotateVecByQuat(float vec[4], float rotation_quat[4], float result[4]);
-
-namespace Dev {
-    __device__ void calculateMetric(float r[4], float g[4][4]);
-    __device__ bool terminateRay(float r[4]);
-    __device__ void calculateStartV(
-        float x,
-        float y,
-        float g[4][4],
-        float v[4],
-        unsigned int d_cam_pixels[2],
-        float d_cam_quat[4],
-        float *d_cam_fov_conv_factor
-    );
-    __device__ void makeVNull(float v[4], float g[4][4]);
-}
+__host__ __device__ void rotateVecByQuat(float vec[4], float rotation_quat[4], float result[4]);
 
 // Should have copies between the host and device.
 class Metric
@@ -37,15 +22,15 @@ class Metric
     public:
         // Default metric is flat spacetime with Minkowski coordinates.
         // Calculates the metric tensor at r and stores it in g.
-        __device__ void calculateMetric(float r[4], float g[4][4]);
+        __host__ __device__ void calculateMetric(float r[4], float g[4][4]);
         // Returns whether to terminate a photon passing going through this metric.
-        __device__ bool terminateRay(float r[4]);
+        __host__ __device__ bool terminateRay(float r[4]);
         // Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
         // Overwrites result into v. Assumes Minkowski coordinates.
-        __device__ void calculateStartV(float x, float y, float g[4][4], float v[4],
-            unsigned int d_cam_pixels[2], float d_cam_quat[4], float *d_cam_fov_conv_factor);
+        __host__ void calculateStartV(float x, float y, float g[4][4], float v[4],
+            unsigned int cam_pixels[2], float cam_quat[4], float &cam_fov_conv_factor);
         // Makes a velocity vector null.
-        __device__ void makeVNull(float v[4], float g[4][4]);
+        __host__ void makeVNull(float v[4], float g[4][4]);
 };
 
 /*class Schwarzschild : public Metric
@@ -67,29 +52,38 @@ class Metric
 __host__ __device__ float scalarProduct(float v[4], float g[4][4]);
 
 // Inverts a symmetric 4x4 metric; needed to get the inverse metric for the Christoffel symbols.
-__device__ void invertSymmetric4Metric(float m[4][4], float m_inv[4][4]);
+__host__ __device__ void invertSymmetric4Metric(float m[4][4], float m_inv[4][4]);
 
 // Calculate metric derivatives at r.
-__device__ void calculateMetricDerivs(float r[4], float g_derivs[4][4][4]);
+__host__ __device__ void calculateMetricDerivs(Metric *metric, float r[4], float g_derivs[4][4][4]);
 
 // Calculate the Christoffel symbols.
-__device__ void calculateChristoffelSymbols(float r[4], float g[4][4], float c_symbols[4][4][4], float g_derivs[4][4][4]);
+__host__ __device__ void calculateChristoffelSymbols(Metric *metric, float r[4], float g[4][4], float c_symbols[4][4][4], float g_derivs[4][4][4]);
 
 // Advances with a step of RKF45.
-__device__ void advanceRayRKF45(
+__host__ void advanceRayRKF45(
+    Metric *metric,
     float x[4],
     float v[4],
-    float g[4][4],
-    float g_derivs[4][4][4],
-    float c_symbols[4][4][4],
     float &dl,
-    float k_all[6][8],
-    bool stop_advance,
-    const float tolerance
+    const float &tolerance
+);
+
+void traceImageRKF45(
+    Metric *metric,
+    unsigned int cam_pixels[2],
+    unsigned char *cam_pixel_array,
+    float &cam_fov_conv_factor,
+    float cam_pos[4],
+    float cam_quat[4],
+    float &d_phi,
+    float &d_theta,
+    int sky_pixels[2],
+    unsigned char *sky_map
 );
 
 // CUDA kernels.
-__global__ void traceImage(
+/*__global__ void traceImage(
     unsigned int d_cam_pixels[2],
     unsigned char *d_cam_pixel_array,
     float *d_cam_fov_conv_factor,
@@ -98,6 +92,6 @@ __global__ void traceImage(
     float *d_d_theta,
     int d_sky_pixels[2],
     unsigned char *d_sky_map
-);
+);*/
 
 #endif // TRACE_KERNEL_UTILS

@@ -10,6 +10,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED 23)
 set(CMAKE_CUDA_STANDARD_REQUIRED 13)
 
 find_package(CUDAToolkit REQUIRED)
+find_package(OpenMP REQUIRED)
 
 set(SOURCE_DIR "source")
 set(UI_DIR "ui")

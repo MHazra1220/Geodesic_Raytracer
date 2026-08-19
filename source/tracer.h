@@ -24,44 +24,32 @@ class Tracer
         // Setup functions.
         void importSkyMap(char skymap_file[]);
         void setCameraCoords(float camera_pos[4], float camera_quat[4]);
-        void setCameraResFOV(unsigned int cam_pixels[2], float fov_width);
+        void setCameraResFOV(unsigned int input_cam_pixels[2], float fov_width);
 
-        // Calls the raytracing kernel.
-        void callTraceKernel();
-
-        // Copy traced image from device back to host and save.
-        void transferImageToHost();
+        void traceImage();
         void saveTracedImage(char output_path[]);
 
     private:
         // Should be 3 for 24-bit RGB images.
         int byte_depth;
         // Dimensions of the sky map in pixels (width, height).
-        int h_sky_pixels[2];
-        int *d_sky_pixels { nullptr };
+        int sky_pixels[2];
         size_t image_mem_size;
         // Sky map is stored on the host and the device.
         // Unsigned char to represent unsigned 8-bit integers.
-        unsigned char *h_sky_map { nullptr };
-        unsigned char *d_sky_map { nullptr };
+        unsigned char *sky_map { nullptr };
         // Intervals between azimuthal and polar angles in radians.
-        // These have to be pointers, even though they only store a single number each.
-        float *d_d_phi { nullptr };
-        float *d_d_theta { nullptr };
-        // Camera location and orientation stored together for faster transfer.
-        // For a "real-time" view later on, these need to be copied constantly to the device.
-        float h_cam_coords[8];
-        float *d_cam_coords { nullptr };
+        float d_phi;
+        float d_theta;
+        // Camera location and orientation.
+        float cam_pos[4];
+        float cam_quat[4];
         // Camera dimensions.
-        unsigned int h_cam_pixels[2];
-        unsigned int *d_cam_pixels { nullptr };
-        unsigned char *h_cam_pixel_array { nullptr };
-        unsigned char *d_cam_pixel_array { nullptr };
-        float *d_cam_fov_conv_factor { nullptr };
+        unsigned int cam_pixels[2];
+        unsigned char *cam_pixel_array { nullptr };
+        float cam_fov_conv_factor;
 
-        // Metric to trace in.
-        Metric h_metric;
-        Metric *d_metric;
+        Metric metric;
 };
 
 #endif // TRACER
