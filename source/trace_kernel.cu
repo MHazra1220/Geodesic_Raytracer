@@ -1,3 +1,4 @@
+#include <iostream>
 #include <cmath>
 #include <omp.h>
 
@@ -144,7 +145,7 @@ Metric::makeVNull(float v[4], float g[4][4])
         c += contraction*v[i];
     }
 
-    // Take the positive root solution. a = g_00 is usually negative, so this normally makes v[0] negative
+    // Take the positive root solution. a = g_00 is usually negative, so this normally makes v[0]
     // in order to evolve the photon backwards from the camera. Makes no difference for static metrics.
     v[0] = (-b + std::sqrt(b*b - 4.*a*c)) / (2.*a);
 }
@@ -477,9 +478,6 @@ void traceImageRKF45(
 )
 {
     const float tolerance { 1e-4 };
-    // Set initial step length to maximum; it will probably be cut down automatically.
-    float dl { 5. };
-
     unsigned int num_pixels = cam_pixels[0] * cam_pixels[1];
 
     #pragma omp parallel for
@@ -505,8 +503,20 @@ void traceImageRKF45(
             cam_fov_conv_factor
         );
 
+        // Set initial step length to maximum; it will probably be cut down automatically.
+        float dl { 5. };
+        if (i == 0) {
+            for (int j { 0 }; j < 4; j++) {
+                std::cout << xv[4 + j] << "\t";
+            }
+            std::cout << "\n";
+        }
+
         // Main raytracing loop.
         while (!metric->terminateRay(&xv[0])) {
+            if (i == 0) {
+                std::cout << "TEST" << "\n";
+            }
             advanceRayRKF45(metric, &xv[0], &xv[4], dl, tolerance);
         }
 

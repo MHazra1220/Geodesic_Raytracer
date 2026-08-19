@@ -1,3 +1,4 @@
+#include "source/utilities/float_defn.h"
 #include "source/tracer.h"
 
 #include <iostream>
@@ -10,11 +11,11 @@ int main()
 
     // Initial camera position and quaternion.
     // First number of pos is the time coordinate.
-    float pos[4] { 0., -5., 0., 0. };
+    Real pos[4] { 0., -5., 0., 0. };
     // A quaternion of (1, 0, 0, 0) is the "null" quaternion and aligns the camera with the xyz axes (angle = 0).
-    float quat[4] { 1., 0., 0., 0. };
+    Real quat[4] { 1., 0., 0., 0. };
     unsigned int cam_pixels[2] { 2560, 1440 };
-    float cam_fov { 90. };
+    Real cam_fov { 90. };
 
     // Path to output the image (for now). Want to create a "real-time" view later on.
     char output_image_path[] { "/home/mh2001/Documents/Programming/General_Relativity/Geodesic_Raytracer/output_images/flat_test.jpg" };

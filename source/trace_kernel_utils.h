@@ -1,6 +1,8 @@
 #ifndef TRACE_KERNEL_UTILS
 #define TRACE_KERNEL_UTILS
 
+#include "utilities/float_defn.h"
+
 // I hate having so many things here, but CUDA doesn't like modularised code; it's easier
 // to put everything the raytracing kernel uses in a single place.
 
@@ -27,8 +29,15 @@ class Metric
         __host__ __device__ bool terminateRay(float r[4]);
         // Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
         // Overwrites result into v. Assumes Minkowski coordinates.
-        __host__ void calculateStartV(float x, float y, float g[4][4], float v[4],
-            unsigned int cam_pixels[2], float cam_quat[4], float &cam_fov_conv_factor);
+        __host__ void calculateStartV(
+            float x,
+            float y,
+            float g[4][4],
+            float v[4],
+            unsigned int cam_pixels[2],
+            float cam_quat[4],
+            float &cam_fov_conv_factor
+        );
         // Makes a velocity vector null.
         __host__ void makeVNull(float v[4], float g[4][4]);
 };
