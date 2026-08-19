@@ -7,6 +7,7 @@
 
 // Constants for RKF45 method. Have to be in global namespace, unfortunately.
 
+// GPU constants for a future GPU-conversion.
 __device__ __constant__ Real A[6] { 0., 2./9., 1./3., 0.75, 1., 5./6. };
 __device__ __constant__ Real B_0[1] { 0. };    // B_0 should not be used! Exists for consistency.
 __device__ __constant__ Real B_1[1] { 2./9. };
@@ -289,7 +290,7 @@ void
 calculateMetricDerivs(Metric *metric, Real r[4], Real g_derivs[4][4][4])
 {
     // FIXME: Fixed step for now; this needs to be adaptive!
-    const Real step { 5e-6 };
+    const Real step { 5e-8 };
     const Real half_step { 0.5 * step };
     const Real inv_step { 1. / step };
 
@@ -426,9 +427,9 @@ advanceRayRKF45(
 
         // Calculate 4th and 5th-order estimate deltas. Set to zero first.
         #pragma unroll
-        for (int i { 0 }; i < 4; i++) xv_4[0] = 0.;
+        for (int i { 0 }; i < 4; i++) xv_4[i] = 0.;
         #pragma unroll
-        for (int i { 0 }; i < 8; i++) xv_5[0] = 0.;
+        for (int i { 0 }; i < 8; i++) xv_5[i] = 0.;
 
         for (int i { 0 }; i < 6; i++) {
             // Only need positions to 4th-order for tolerance testing.
@@ -491,7 +492,7 @@ void traceImageRKF45(
     unsigned char *sky_map
 )
 {
-    const Real tolerance { 1e-4 };
+    const Real tolerance { 1e-5 };
     unsigned int num_pixels = cam_pixels[0] * cam_pixels[1];
 
     #pragma omp parallel for
@@ -502,6 +503,11 @@ void traceImageRKF45(
         // Store coordinates and velocity together.
         // First 4 numbers are the 4-position, last 4 are the 4-velocity.
         Real xv[8];
+        #pragma unroll
+        for (int mu { 0 }; mu < 4; mu++) {
+            xv[mu] = cam_pos[mu];
+        }
+
         // Metric tensor.
         Real g[4][4];
 
@@ -518,13 +524,11 @@ void traceImageRKF45(
         );
 
         // Set initial step length to maximum; it will probably be cut down automatically.
-        Real dl { 5. };
+        Real const max_dl { 5. };
+        Real dl { max_dl };
 
         // Main raytracing loop.
         while (!metric->terminateRay(&xv[0])) {
-            if (i == 0) {
-                std::cout << xv[5] << "\n";
-            }
             advanceRayRKF45(metric, &xv[0], &xv[4], dl, tolerance);
         }
 
@@ -543,7 +547,7 @@ void traceImageRKF45(
         int sky_y { (int)(theta / d_theta) };
         // Address of the pixel RGB colour.
         unsigned char *colour { &sky_map[3 * (sky_y * sky_pixels[0] + sky_x)] };
-        // Probably fallen into a photon sphere/black hole if true.
+        // Fallen into a photon sphere/black hole if true.
         bool set_to_black = metric->setToBlack(&xv[0]);
 
         // Write camera image.
@@ -559,6 +563,8 @@ void traceImageRKF45(
                 cam_pixel_array[pixel_index + j] = 0;
             }
         }
+
+        std::cout << i << "\n";
     }
 }
 
