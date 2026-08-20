@@ -2,14 +2,15 @@ cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
 
 project(
     Geodesic_Raytracer
-    VERSION 1.0
+    VERSION 0.1
     LANGUAGES CUDA
 )
 
 find_package(CUDAToolkit REQUIRED)
 find_package(OpenMP REQUIRED)
 
-set (CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} ${OpenMP_CXX_FLAGS}")
+# set (CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} ${OpenMP_CUDA_FLAGS}")
+# message(${CMAKE_CUDA_FLAGS})
 
 set(CMAKE_CXX_STANDARD_REQUIRED 23)
 # set(CMAKE_CUDA_STANDARD_REQUIRED 13)

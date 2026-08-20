@@ -15,11 +15,11 @@
 #include <stdexcept>
 
 // Stops this code snippet being spammed everywhere.
-void
+/*void
 checkCudaError(cudaError_t err, std::string error_msg)
 {
     if (err != cudaSuccess) throw std::runtime_error(error_msg);
-}
+}*/
 
 Tracer::Tracer(Real initial_pos[4], Real initial_quat[4], unsigned int cam_pixels[2], Real cam_fov, char skymap_file[])
 {
@@ -67,7 +67,7 @@ Tracer::setCameraResFOV(unsigned int input_cam_pixels[2], Real fov_width)
     // Allocate memory for the camera pixel array on the host and device.
     free(cam_pixel_array);
     // 24-bit RGB image.
-    image_mem_size = sizeof(unsigned char) * cam_pixels[0] * cam_pixels[1] * byte_depth;
+    auto image_mem_size = sizeof(unsigned char) * cam_pixels[0] * cam_pixels[1] * byte_depth;
     cam_pixel_array = (unsigned char*)malloc(image_mem_size);
 
     // Set camera FOV conversion factor.

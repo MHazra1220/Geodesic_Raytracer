@@ -14,7 +14,7 @@ int main()
     Real pos[4] { 0., 10., 0., 0. };
     // A quaternion of (1, 0, 0, 0) is the "null" quaternion and aligns the camera with the xyz axes (angle = 0).
     Real quat[4] { 0., 0., 0., 1. };
-    unsigned int cam_pixels[2] { 100, 60 };
+    unsigned int cam_pixels[2] { 1920, 1080 };
     Real cam_fov { 120. };
 
     // Path to output the image (for now). Want to create a "real-time" view later on.

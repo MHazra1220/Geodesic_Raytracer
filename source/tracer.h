@@ -35,7 +35,6 @@ class Tracer
         int byte_depth;
         // Dimensions of the sky map in pixels (width, height).
         int sky_pixels[2];
-        size_t image_mem_size;
         // Sky map is stored on the host and the device.
         // Unsigned char to represent unsigned 8-bit integers.
         unsigned char *sky_map { nullptr };
