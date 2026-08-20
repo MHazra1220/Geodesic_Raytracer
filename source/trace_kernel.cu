@@ -290,7 +290,7 @@ void
 calculateMetricDerivs(Metric *metric, Real r[4], Real g_derivs[4][4][4])
 {
     // FIXME: Fixed step for now; this needs to be adaptive!
-    const Real step { 1e-6 };
+    const Real step { 1e-8 };
     const Real half_step { 0.5 * step };
     const Real inv_step { 1. / step };
 
@@ -492,7 +492,7 @@ void traceImageRKF45(
     unsigned char *sky_map
 )
 {
-    const Real tolerance { 2.5e-5 };
+    const Real tolerance { 1e-6 };
     unsigned int num_pixels = cam_pixels[0] * cam_pixels[1];
 
     #pragma omp parallel for
