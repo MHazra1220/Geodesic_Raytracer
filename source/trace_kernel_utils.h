@@ -8,7 +8,7 @@
 
 // pi is needed by the host when importing sky maps and used by the device when getting pixels.
 Real const pi_host = 3.141592653589793;
-// __device__ __constant__ Real pi_device = 3.141592653589793;
+__device__ __constant__ Real pi_device = 3.141592653589793;
 
 // Quaternionic arithmetic functions.
 
@@ -38,7 +38,7 @@ class Schwarzschild
         bool terminateRay(Real const r[4]);
         bool setToBlack(Real const r[4]);
 
-        Real schwarzschildRadius();
+        Real schwarzschildRadius() const;
 
     private:
         void makeVNull(Real v[4], Real const g[4][4]);
@@ -47,6 +47,9 @@ class Schwarzschild
         // Assumed fixed for now.
         Real const s_radius { 1. };
         // Simulation terminates if a ray gets within this radius.
+        // TODO: The use of the Newtonian "magic" potential allows us to trace
+        // across the event horizon. We should be able to get images from inside
+        // a black hole, in which case a different halting condition is needed.
         Real const inner_limit { 1.5 * s_radius };
         Real const inner_limit_squared { inner_limit * inner_limit };
         Real const outer_limit_squared { (40. * s_radius) * (40. * s_radius) };

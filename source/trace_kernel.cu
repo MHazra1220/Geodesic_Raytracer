@@ -184,7 +184,7 @@ Schwarzschild::setToBlack(Real const r[4])
 }
 
 Real
-Schwarzschild::schwarzschildRadius()
+Schwarzschild::schwarzschildRadius() const
 {
     return s_radius;
 }
@@ -402,7 +402,7 @@ void traceImageRKF45(
     unsigned char *sky_map
 )
 {
-    Real const tolerance { metric->schwarzschildRadius() * 1e-6 };
+    Real const tolerance { metric->schwarzschildRadius() * 1e-5 };
     unsigned int const num_pixels = cam_pixels[0] * cam_pixels[1];
 
     #pragma omp parallel for
