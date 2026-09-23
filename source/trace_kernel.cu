@@ -5,8 +5,6 @@
 #include "utilities/float_defn.h"
 #include "trace_kernel_utils.h"
 
-// Constants for RKF45 method. Have to be in global namespace, unfortunately.
-
 // GPU constants for a future GPU-conversion.
 __device__ __constant__ Real A[6] { 0., 2./9., 1./3., 0.75, 1., 5./6. };
 __device__ __constant__ Real B_0[1] { 0. };    // B_0 should not be used! Exists for consistency.
@@ -23,7 +21,7 @@ namespace RKF45 {
     Real A[6] { 0., 2./9., 1./3., 0.75, 1., 5./6. };
     Real B_0[1] { 0. };    // B_0 should not be used! Exists for consistency.
     Real B_1[1] { 2./9. };
-    Real B_2[2] { 1./12., 0.25 };
+    Real B_2[2] { 1./12., 1./4. };
     Real B_3[3] { 69./128., -243./128., 135./64. };
     Real B_4[4] { -17./12., 27./4., -27./5., 16./15. };
     Real B_5[5] { 65./432., -5./16., 13./16., 4./27., 5./144. };
@@ -34,16 +32,21 @@ namespace RKF45 {
 
 // Quaternionic arithmetic functions.
 
+// Cross product of u and v, stored in cross.
+__host__ __device__ void crossProduct(Real const u[3], Real const v[3], Real cross[3])
+{
+    cross[0] = u[1]*v[2] - u[2]*v[1];
+    cross[1] = u[2]*v[0] - u[0]*v[2];
+    cross[2] = u[0]*v[1] - u[1]*v[0];
+}
+
 // Calculate the Hamilton (quaternionic) product of two quaternions.
 void
-quatProduct(Real u[4], Real v[4], Real result[4])
+quatProduct(Real const u[4], Real const v[4], Real result[4])
 {
     result[0] = u[0]*v[0] - (u[1]*v[1] + u[2]*v[2] + u[3]*v[3]);
-    // Cross product of the vector components of u and v is needed.
     Real cross[3];
-    cross[0] = u[2]*v[3] - u[3]*v[2];
-    cross[1] = u[3]*v[1] - u[1]*v[3];
-    cross[2] = u[1]*v[2] - u[2]*v[1];
+    crossProduct(&u[1], &v[1], cross);
     #pragma unroll
     for (int i { 1 }; i < 4; i++)
     {
@@ -67,48 +70,39 @@ rotateVecByQuat(Real vec[4], Real rotation_quat[4], Real result[4])
     quatProduct(rotation_quat, intermediate_result, result);
 }
 
-// Function definitions for Metric and its derived classes.
-
-// Stores the calculated independent components in g.
-// Flat/Minkowski spacetime; same everywhere.
 void
-Metric::calculateMetric(Real r[4], Real g[4][4])
+Schwarzschild::calculateMetric(Real r[4], Real g[4][4])
 {
-    g[0][0] = -1.; g[0][1] = 0.; g[0][2] = 0.; g[0][3] = 0.;
-    g[1][0] = 0.; g[1][1] = 1.; g[1][2] = 0.; g[0][3] = 0.;
-    g[2][0] = 0.; g[2][1] = 0.; g[2][2] = 1.; g[2][3] = 0.;
-    g[3][0] = 0.; g[3][1] = 0.; g[3][2] = 0.; g[3][3] = 1.;
-}
-
-// Returns whether to terminate a photon passing through a point in this metric.
-bool
-Metric::terminateRay(Real r[4])
-{
-    // Flat spacetime has no obvious termination condition.
-    // Currently just measures whether the ray is beyond some radius.
-    Real radius_squared { r[1] * r[1] +
-                           r[2] * r[2] +
-                           r[3] * r[3] };
-    return radius_squared > outer_limit_squared;
-}
-
-bool
-Metric::setToBlack(Real r[4])
-{
-    return false;
+    Real r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
+    Real r_mag { std::sqrt(r_squared) };
+    Real mult_factor { s_radius / (r_squared * (r_mag - s_radius)) };
+    for (int mu { 1 }; mu < 4; mu++)
+    {
+        g[0][mu] = 0.;
+        g[mu][0] = 0.;
+        for (int nu { mu }; nu < 4; nu++)
+        {
+            g[mu][nu] = mult_factor * r[mu] * r[nu];
+            g[nu][mu] = g[mu][nu];
+        }
+    }
+    g[0][0] = -1. + s_radius / r_mag;
+    g[1][1] += 1.;
+    g[2][2] += 1.;
+    g[3][3] += 1.;
 }
 
 // Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
 // Overwrites result into v. Assumes Minkowski/Cartesian coordinates.
 void
-Metric::calculateStartV(
-    Real x,
-    Real y,
-    Real g[4][4],
+Schwarzschild::calculateStartV(
+    Real const x,
+    Real const y,
+    Real const g[4][4],
     Real v[4],
-    unsigned int cam_pixels[2],
+    unsigned int const cam_pixels[2],
     Real cam_quat[4],
-    Real &cam_fov_conv_factor
+    Real const &cam_fov_conv_factor
 )
 {
     // Local phi and theta coordinates in the camera's reference frame.
@@ -129,7 +123,7 @@ Metric::calculateStartV(
 
 // Make a velocity vector null (assuming Minkowski coordinates).
 void
-Metric::makeVNull(Real v[4], Real g[4][4])
+Schwarzschild::makeVNull(Real v[4], Real const g[4][4])
 {
     Real a { g[0][0] };
     Real b { 0. };
@@ -159,50 +153,47 @@ Metric::makeVNull(Real v[4], Real g[4][4])
     v[0] = (-b + std::sqrt(b*b - 4.*a*c)) / (2.*a);
 }
 
+// Pseudo-Newtonian central force that corresponds to null geodesics.
+void
+Schwarzschild::calculateCentralAccel(Real const r[3], Real const &h_squared, Real accel[3])
+{
+    Real r_norm { std::sqrt(r[0]*r[0] + r[1]*r[1] + r[2]*r[2]) };
+    Real const scale_factor = (-1.5 * s_radius * h_squared) / std::pow(r_norm, 5);
+    #pragma unroll
+    for (int i { 0 }; i < 3; i++) {
+        accel[i] = scale_factor * r[i];
+    }
+}
+
 // Schwarzschild metric functions.
 //--------------------------------
-void
-Schwarzschild::calculateMetric(Real r[4], Real g[4][4])
+
+bool
+Schwarzschild::terminateRay(Real const r[4])
 {
     Real r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
-    Real r_mag { std::sqrt(r_squared) };
-    Real mult_factor { s_radius / (r_squared * (r_mag - s_radius)) };
-    for (int mu { 1 }; mu < 4; mu++)
-    {
-        g[0][mu] = 0.;
-        g[mu][0] = 0.;
-        for (int nu { mu }; nu < 4; nu++)
-        {
-            g[mu][nu] = mult_factor * r[mu] * r[nu];
-            g[nu][mu] = g[mu][nu];
-        }
-    }
-    g[0][0] = -1. + s_radius / r_mag;
-    g[1][1] += 1.;
-    g[2][2] += 1.;
-    g[3][3] += 1.;
+    return (r_squared < inner_limit_squared) || (r_squared > outer_limit_squared);
 }
 
 bool
-Schwarzschild::terminateRay(Real r[4])
-{
-    Real r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
-    return (r_squared < photon_sphere_squared) || (r_squared > outer_limit_squared);
-}
-
-bool
-Schwarzschild::setToBlack(Real r[4])
+Schwarzschild::setToBlack(Real const r[4])
 {
     Real r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
     // Fallen into the photon sphere/black hole if true.
-    return r_squared < photon_sphere_squared;
+    return r_squared < inner_limit_squared;
+}
+
+Real
+Schwarzschild::schwarzschildRadius()
+{
+    return s_radius;
 }
 
 // Calculates the scalar product of a velocity with a given metric tensor.
 // Tries to use as little memory as possible; the goal
 // is to minimize register occupancy, not computation.
 Real
-scalarProduct(Real v[4], Real g[4][4])
+scalarProduct(Real const v[4], Real const g[4][4])
 {
     Real result { 0. };
     for (int i { 0 }; i < 4; i++)
@@ -221,46 +212,46 @@ scalarProduct(Real v[4], Real g[4][4])
 
 // Inverts a symmetric 4x4 metric; needed to get the inverse metric for the Christoffel symbols.
 void
-invertSymmetric4Metric(Real m[4][4], Real m_inv[4][4])
+invertSymmetric4Metric(Real const m[4][4], Real m_inv[4][4])
 {
     // Computationally fastest way for such a small system is probably
     // a hard implementation of the 4x4 inverse.
     m_inv[0][0] = m[1][1]*m[2][2]*m[3][3] + m[1][2]*m[2][3]*m[3][1] +
-        m[1][3]*m[2][1]*m[3][2] - m[1][1]*m[2][3]*m[3][2] -
-        m[1][2]*m[2][1]*m[3][3] - m[1][3]*m[2][2]*m[3][1];
+    m[1][3]*m[2][1]*m[3][2] - m[1][1]*m[2][3]*m[3][2] -
+    m[1][2]*m[2][1]*m[3][3] - m[1][3]*m[2][2]*m[3][1];
     m_inv[0][1] = m[0][1]*m[2][3]*m[3][2] + m[0][2]*m[2][1]*m[3][3] +
-        m[0][3]*m[2][2]*m[3][1] - m[0][1]*m[2][2]*m[3][3] -
-        m[0][2]*m[2][3]*m[3][1] - m[0][3]*m[2][1]*m[3][2];
+    m[0][3]*m[2][2]*m[3][1] - m[0][1]*m[2][2]*m[3][3] -
+    m[0][2]*m[2][3]*m[3][1] - m[0][3]*m[2][1]*m[3][2];
     m_inv[1][0] = m_inv[0][1];
     m_inv[0][2] = m[0][1]*m[1][2]*m[3][3] + m[0][2]*m[1][3]*m[3][1] +
-        m[0][3]*m[1][1]*m[3][2] - m[0][1]*m[1][3]*m[3][2] -
-        m[0][2]*m[1][1]*m[3][3] - m[0][3]*m[1][2]*m[3][1];
+    m[0][3]*m[1][1]*m[3][2] - m[0][1]*m[1][3]*m[3][2] -
+    m[0][2]*m[1][1]*m[3][3] - m[0][3]*m[1][2]*m[3][1];
     m_inv[2][0] = m_inv[0][2];
     m_inv[0][3] = m[0][1]*m[1][3]*m[2][2] + m[0][2]*m[1][1]*m[2][3] +
-        m[0][3]*m[1][2]*m[2][1] - m[0][1]*m[1][2]*m[2][3] -
-        m[0][2]*m[1][3]*m[2][1] - m[0][3]*m[1][1]*m[2][2];
+    m[0][3]*m[1][2]*m[2][1] - m[0][1]*m[1][2]*m[2][3] -
+    m[0][2]*m[1][3]*m[2][1] - m[0][3]*m[1][1]*m[2][2];
     m_inv[3][0] = m_inv[0][3];
     m_inv[1][1] = m[0][0]*m[2][2]*m[3][3] + m[0][2]*m[2][3]*m[3][0] +
-        m[0][3]*m[2][0]*m[3][2] - m[0][0]*m[2][3]*m[3][2] -
-        m[0][2]*m[2][0]*m[3][3] - m[0][3]*m[2][2]*m[3][0];
+    m[0][3]*m[2][0]*m[3][2] - m[0][0]*m[2][3]*m[3][2] -
+    m[0][2]*m[2][0]*m[3][3] - m[0][3]*m[2][2]*m[3][0];
     m_inv[1][2] = m[0][0]*m[1][3]*m[3][2] + m[0][2]*m[1][0]*m[3][3] +
-        m[0][3]*m[1][2]*m[3][0] - m[0][0]*m[1][2]*m[3][3] -
-        m[0][2]*m[1][3]*m[3][0] - m[0][3]*m[1][0]*m[3][2];
+    m[0][3]*m[1][2]*m[3][0] - m[0][0]*m[1][2]*m[3][3] -
+    m[0][2]*m[1][3]*m[3][0] - m[0][3]*m[1][0]*m[3][2];
     m_inv[2][1] = m_inv[1][2];
     m_inv[1][3] = m[0][0]*m[1][2]*m[2][3] + m[0][2]*m[1][3]*m[2][0] +
-        m[0][3]*m[1][0]*m[2][2] - m[0][0]*m[1][3]*m[2][2] -
-        m[0][2]*m[1][0]*m[2][3] - m[0][3]*m[1][2]*m[2][0];
+    m[0][3]*m[1][0]*m[2][2] - m[0][0]*m[1][3]*m[2][2] -
+    m[0][2]*m[1][0]*m[2][3] - m[0][3]*m[1][2]*m[2][0];
     m_inv[3][1] = m_inv[1][3];
     m_inv[2][2] = m[0][0]*m[1][1]*m[3][3] + m[0][1]*m[1][3]*m[3][0] +
-        m[0][3]*m[1][0]*m[3][1] - m[0][0]*m[1][3]*m[3][1] -
-        m[0][1]*m[1][0]*m[3][3] - m[0][3]*m[1][1]*m[3][0];
+    m[0][3]*m[1][0]*m[3][1] - m[0][0]*m[1][3]*m[3][1] -
+    m[0][1]*m[1][0]*m[3][3] - m[0][3]*m[1][1]*m[3][0];
     m_inv[2][3] = m[0][0]*m[1][3]*m[2][1] + m[0][1]*m[1][0]*m[2][3] +
-        m[0][3]*m[1][1]*m[2][0] - m[0][0]*m[1][1]*m[2][3] -
-        m[0][1]*m[1][3]*m[2][0] - m[0][3]*m[1][0]*m[2][1];
+    m[0][3]*m[1][1]*m[2][0] - m[0][0]*m[1][1]*m[2][3] -
+    m[0][1]*m[1][3]*m[2][0] - m[0][3]*m[1][0]*m[2][1];
     m_inv[3][2] = m_inv[2][3];
     m_inv[3][3] = m[0][0]*m[1][1]*m[2][2] + m[0][1]*m[1][2]*m[2][0] +
-        m[0][2]*m[1][0]*m[2][1] - m[0][0]*m[1][2]*m[2][1] -
-        m[0][1]*m[1][0]*m[2][2] - m[0][2]*m[1][1]*m[2][0];
+    m[0][2]*m[1][0]*m[2][1] - m[0][0]*m[1][2]*m[2][1] -
+    m[0][1]*m[1][0]*m[2][2] - m[0][2]*m[1][1]*m[2][0];
 
     // The scalar product of the metric with its inverse should give the number of dimensions, i.e. 4.
     // The metric must already be correctly normalised.
@@ -285,104 +276,28 @@ invertSymmetric4Metric(Real m[4][4], Real m_inv[4][4])
     }
 }
 
-// Calculate metric derivatives at r.
-void
-calculateMetricDerivs(Metric *metric, Real r[4], Real g_derivs[4][4][4])
-{
-    // FIXME: Fixed step for now; this needs to be adaptive!
-    const Real step { 1e-8 };
-    const Real half_step { 0.5 * step };
-    const Real inv_step { 1. / step };
-
-    // Calculate metric derivatives.
-    // Forward step.
-    for (int alpha { 0 }; alpha < 4; alpha++) {
-        Real g_temp[4][4];
-
-        // Use second-order central difference.
-        // Forward step.
-        r[alpha] += half_step;
-        metric->calculateMetric(r, g_temp);
-        for (int mu { 0 }; mu < 4; mu++) {
-            for (int nu { mu }; nu < 4; nu++) {
-                g_derivs[alpha][mu][nu] = g_temp[mu][nu];
-                g_derivs[alpha][nu][mu] = g_temp[mu][nu];
-            }
-        }
-
-        // Backward step.
-        r[alpha] -= step;
-        metric->calculateMetric(r, g_temp);
-        for (int mu { 0 }; mu < 4; mu++) {
-            for (int nu { mu }; nu < 4; nu++) {
-                g_derivs[alpha][mu][nu] -= g_temp[mu][nu];
-                g_derivs[alpha][mu][nu] *= inv_step;
-                g_derivs[alpha][nu][mu] = g_derivs[alpha][mu][nu];
-            }
-        }
-
-        // Reset r to actual camera position.
-        r[alpha] += half_step;
-    }
-}
-
-// Calculate the Christoffel symbols.
-void
-calculateChristoffelSymbols(
-    Metric *metric,
-    Real r[4],
-    Real g[4][4],
-    Real c_symbols[4][4][4],
-    Real g_derivs[4][4][4])
-{
-    calculateMetricDerivs(metric, r, g_derivs);
-
-    Real g_inv[4][4];
-    invertSymmetric4Metric(g, g_inv);
-
-    // Calculate the Christoffel symbols.
-    for (int alpha { 0 }; alpha < 4; alpha++) {
-        for (int mu { 0 }; mu < 4; mu++) {
-            for (int nu { mu }; nu < 4; nu++) {
-                Real sum { 0. };
-                for (int beta { 0 }; beta < 4; beta++) {
-                    sum += g_inv[alpha][beta] * (g_derivs[nu][beta][mu] + g_derivs[mu][nu][beta] - g_derivs[beta][mu][nu]);
-                }
-                sum *= 0.5;
-                c_symbols[alpha][mu][nu] = sum;
-                c_symbols[alpha][nu][mu] = sum;
-            }
-        }
-    }
-}
-
 // Advances with a step of RKF45.
 void
 advanceRayRKF45(
-    Metric *metric,
+    Schwarzschild *metric,
     Real x[4],
     Real v[4],
+    Real const &h_squared,
     Real &dl,
-    const Real &tolerance
+    Real const &tolerance
 )
 {
-    const Real max_dl { 5. };
+    // Real const max_dl { 4. };
 
-    Real xv_4[4];
+    Real xv_4[8];
     Real xv_5[8];
     bool success { false };
 
     while (!success) {
         success = true;
 
-        // Metric tensor.
-        Real g[4][4];
         // Intermediate derivatives for RKF45.
         Real k_all[6][8];
-        // Christoffel symbols.
-        Real c_symbols[4][4][4];
-        // Metric derivatives.
-        Real g_derivs[4][4][4];
 
         // Calculate the 6 k-vectors.
         for (int k_num { 0 }; k_num < 6; k_num++) {
@@ -400,45 +315,40 @@ advanceRayRKF45(
                 }
             }
 
+            // Calculate spatial velocity derivatives with the central
+            // pseudo-Newtonian potential/force field.
+            Real accel[3];
+            metric->calculateCentralAccel(&xv_[1], h_squared, accel);
+
             // Current set of derivatives to modify.
             Real *k { &k_all[k_num][0] };
-
-            // Calculate velocity derivatives with the Christoffel symbols.
-            // Need the metric tensor first.
-            metric->calculateMetric(&xv_[0], g);
-            calculateChristoffelSymbols(metric, &xv_[0], g, c_symbols, g_derivs);
-            for (int mu { 0 }; mu < 4; mu++) {
-                // 4-position derivative is just the 4-velocity.
-                k[mu] = xv_[4 + mu] * dl;
-
-                Real component { 0. };
-                #pragma unroll
-                for (int nu { 0 }; nu < 4; nu++) {
-                    // Sum the diagonal first.
-                    component += c_symbols[mu][nu][nu] * v[nu] * v[nu];
-                    // Double sum the off-diagonals (Christoffel symbol symmetry).
-                    for (int sigma { nu + 1 }; sigma < 4; sigma++) {
-                        component += 2. * c_symbols[mu][nu][sigma] * v[nu] * v[sigma];
-                    }
-                }
-                k[4 + mu] = -component * dl;
+            // Set k components.
+            // 4-position derivatives are already known.
+            // FIXME: For now, this scheme doesn't do anything about the time coordinate.
+            k[0] = 0.;
+            #pragma unroll
+            for (int i = 1; i < 4; i++) {
+                k[i] = xv_[4 + i] * dl;
+            }
+            // Set velocity derivatives.
+            k[4] = 0.;
+            #pragma unroll
+            for (int i = 1; i < 4; i++) {
+                k[4 + i] = accel[i - 1] * dl;
             }
         }
 
         // Calculate 4th and 5th-order estimate deltas. Set to zero first.
         #pragma unroll
-        for (int i { 0 }; i < 4; i++) xv_4[i] = 0.;
-        #pragma unroll
-        for (int i { 0 }; i < 8; i++) xv_5[i] = 0.;
+        for (int i { 0 }; i < 8; i++) {
+            xv_4[i] = 0.;
+            xv_5[i] = 0.;
+        }
 
         for (int i { 0 }; i < 6; i++) {
-            // Only need positions to 4th-order for tolerance testing.
-            #pragma unroll
-            for (int mu { 0 }; mu < 4; mu++) {
-                xv_4[mu] += RKF45::c_k_4[i] * k_all[i][mu];
-            }
             #pragma unroll
             for (int mu { 0 }; mu < 8; mu++) {
+                xv_4[mu] += RKF45::c_k_4[i] * k_all[i][mu];
                 xv_5[mu] += RKF45::c_k_5[i] * k_all[i][mu];
             }
         }
@@ -456,7 +366,8 @@ advanceRayRKF45(
         // If stop_advance is true, don't advance no matter what.
         // advance = advance && (!stop_advance);
 
-        for (int mu { 0 }; mu < 4; mu++) {
+        #pragma unroll
+        for (int mu { 0 }; mu < 8; mu++) {
             Real error { std::abs(xv_5[mu] - xv_4[mu]) };
             if (error > max_error) max_error = error;
         }
@@ -464,10 +375,9 @@ advanceRayRKF45(
         success = max_error < tolerance;
 
         // Calculate next step size to try if tolerance checks failed.
-        dl *= 0.9 * std::pow(tolerance / max_error, 0.2);
+        dl = 0.9 * dl * std::pow(tolerance / max_error, 0.2);
         // Limit max step size.
-        bool limit_size { dl > max_dl };
-        dl = (!limit_size * dl) + (limit_size * max_dl);
+        // if (dl > max_dl) dl = max_dl;
     }
 
     // Advance positions and velocities.
@@ -480,25 +390,25 @@ advanceRayRKF45(
 }
 
 void traceImageRKF45(
-    Metric *metric,
+    Schwarzschild *metric,
     unsigned int cam_pixels[2],
     unsigned char *cam_pixel_array,
-    Real &cam_fov_conv_factor,
+    Real const &cam_fov_conv_factor,
     Real cam_pos[4],
     Real cam_quat[4],
-    Real &d_phi,
-    Real &d_theta,
+    Real const &d_phi,
+    Real const &d_theta,
     int sky_pixels[2],
     unsigned char *sky_map
 )
 {
-    const Real tolerance { 1e-6 };
-    unsigned int num_pixels = cam_pixels[0] * cam_pixels[1];
+    Real const tolerance { metric->schwarzschildRadius() * 1e-6 };
+    unsigned int const num_pixels = cam_pixels[0] * cam_pixels[1];
 
     #pragma omp parallel for
     for (unsigned int i = 0; i < num_pixels; i++) {
-        unsigned int pixel_x = i % cam_pixels[0];
-        unsigned int pixel_y = i / cam_pixels[0];
+        unsigned int const pixel_x = i % cam_pixels[0];
+        unsigned int const pixel_y = i / cam_pixels[0];
 
         // Store coordinates and velocity together.
         // First 4 numbers are the 4-position, last 4 are the 4-velocity.
@@ -523,13 +433,20 @@ void traceImageRKF45(
             cam_fov_conv_factor
         );
 
-        // Set initial step length to maximum; it will probably be cut down automatically.
-        Real const max_dl { 5. };
-        Real dl { max_dl };
+        // Get the angular momentum per unit mass (i.e. treat it as
+        // a classic, massive particle).
+        // "Mass" is a bit of a misnomer here, it's just |r x v|.
+        Real L[3];
+        crossProduct(&xv[1], &xv[5], L);
+        Real const h_squared = L[0] * L[0] + L[1] * L[1] + L[2] * L[2];
+
+        // Set initial step length; doesn't really matter much
+        // because it gets modified automatically.
+        Real dl { 1. };
 
         // Main raytracing loop.
         while (!metric->terminateRay(&xv[0])) {
-            advanceRayRKF45(metric, &xv[0], &xv[4], dl, tolerance);
+            advanceRayRKF45(metric, &xv[0], &xv[4], h_squared, dl, tolerance);
         }
 
         // Use the velocity to take the photon to infinity and sample the sky box.
@@ -537,8 +454,8 @@ void traceImageRKF45(
         // Move into the range 0 to 2*pi if phi < 0.
         phi += 2. * pi_host * (phi < 0.);
         Real theta { std::acos(xv[7]) / (std::sqrt(xv[5] * xv[5] +
-                                                     xv[6] * xv[6] +
-                                                     xv[7] * xv[7]))};
+                                                   xv[6] * xv[6] +
+                                                   xv[7] * xv[7]))};
 
         // Convert to pixel locations on the sky map; floor the number.
         // Phi goes anticlockwise, so 2.*pi - phi transforms it to stop

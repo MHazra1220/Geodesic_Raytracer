@@ -1,9 +1,5 @@
-# set(UTILS_DIR "utilities")
-# add_subdirectory(${UTILS_DIR})
-
 add_library(Tracer tracer.cu)
 add_library(Trace_Kernels trace_kernel.cu)
 target_compile_options(Trace_Kernels PRIVATE -Xcompiler=-fopenmp)
 target_link_libraries(Trace_Kernels PUBLIC OpenMP::OpenMP_CUDA)
 target_link_libraries(Tracer PRIVATE Trace_Kernels)
-# target_link_libraries(Tracer PRIVATE Float_Defn)

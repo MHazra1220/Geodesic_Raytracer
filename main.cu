@@ -12,13 +12,14 @@ int main()
     // Initial camera position and quaternion.
     // First number of pos is the time coordinate.
     Real pos[4] { 0., 10., 0., 0. };
-    // A quaternion of (1, 0, 0, 0) is the "null" quaternion and aligns the camera with the xyz axes (angle = 0).
+    // A quaternion of (1, 0, 0, 0) is the "null" quaternion and aligns the camera with the xyz axes (angle = 0),
+    // looking along +x with +y to the left and +z straight up.
     Real quat[4] { 0., 0., 0., 1. };
-    unsigned int cam_pixels[2] { 1920, 1080 };
+    unsigned int cam_pixels[2] { 2560, 1440 };
     Real cam_fov { 120. };
 
     // Path to output the image (for now). Want to create a "real-time" view later on.
-    char output_image_path[] { "/home/mh2001/Documents/Programming/General_Relativity/Geodesic_Raytracer/output_images/schwarzschild_test.jpg" };
+    char output_image_path[] { "/home/mh2001/Documents/Programming/General_Relativity/Geodesic_Raytracer/output_images/schwarzschild_test_f64.jpg" };
 
     Tracer tracer_test { pos, quat, cam_pixels, cam_fov, sky_map };
     tracer_test.traceImage();
