@@ -308,7 +308,7 @@ void traceImageRKF45(
         // "Mass" is a bit of a misnomer here, it's just |r x v|.
         Real L[3];
         crossProduct(&xv[1], &xv[5], L);
-        Real const h_squared = L[0] * L[0] + L[1] * L[1] + L[2] * L[2];
+        Real const h_squared = L[0]*L[0] + L[1]*L[1] + L[2]*L[2];
 
         // Set initial step length; doesn't really matter much
         // because it gets modified automatically.

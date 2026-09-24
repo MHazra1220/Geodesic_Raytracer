@@ -49,16 +49,16 @@ rMagnitude(Real const r[3])
 __device__ Real
 rMagnitudeDev(Real const r[3])
 {
-    return sqrt(rSquared(r));
+    return norm3d(r[0], r[1], r[2]);
 }
 
 __device__ Real
 rInvMagnitudeDev(Real const r[3])
 {
-    return rsqrt(rSquared(r));
+    return rnorm3d(r[0], r[1], r[2]);
 }
 
-__host__ __device__ Real
+Real
 rSquared(Real const r[3])
 {
     return r[0]*r[0] + r[1]*r[1] + r[2]*r[2];

@@ -6,7 +6,7 @@
 #include "utilities/math_functions.h"
 #include "trace_kernel_utils.h"
 
-// GPU constants for a future GPU-conversion.
+// GPU constants for RKF45.
 __device__ __constant__ Real A[6] { 0., 2./9., 1./3., 0.75, 1., 5./6. };
 __device__ __constant__ Real B_0[1] { 0. };    // B_0 should not be used! Exists for consistency.
 __device__ __constant__ Real B_1[1] { 2./9. };
@@ -18,6 +18,11 @@ __device__ __constant__ Real *B[6] { &B_0[0], &B_1[0], &B_2[0], &B_3[0], &B_4[0]
 __device__ __constant__ Real c_k_4[6] { 1./9., 0., 9./20., 16./45., 1./12., 0. };
 __device__ __constant__ Real c_k_5[6] { 47./450., 0., 12./25., 32./225., 1./30., 6./25. };
 
+__device__ Real
+rSquaredDev(Real const r[3])
+{
+    return r[0]*r[0] + r[1]*r[1] + r[2]*r[2];
+}
 
 // CUDA device functions for the Schwarzschild metric.
 namespace SchwarzschildDevice
@@ -25,7 +30,7 @@ namespace SchwarzschildDevice
     __device__ void
     calculateMetric(Real const r[4], Real g[4][4])
     {
-        Real r_squared { rSquared(&r[1]) };
+        Real r_squared { rSquaredDev(&r[1]) };
         Real r_mag { sqrt(r_squared) };
         Real mult_factor { s_radius / (r_squared * (r_mag - s_radius)) };
         for (int mu { 1 }; mu < 4; mu++)
@@ -88,7 +93,7 @@ namespace SchwarzschildDevice
     __device__ bool
     terminateRay(Real const r[4])
     {
-        Real const r_squared { rSquared(&r[1]) };
+        Real const r_squared { rSquaredDev(&r[1]) };
         return (r_squared < inner_limit_squared) || (r_squared > outer_limit_squared);
     }
 
@@ -96,7 +101,7 @@ namespace SchwarzschildDevice
     setToBlack(Real const r[4])
     {
         // Fallen into the photon sphere/black hole if true.
-        return rSquared(&r[1]) < inner_limit_squared;
+        return rSquaredDev(&r[1]) < inner_limit_squared;
     }
 
     // Make a velocity vector null (assuming Minkowski coordinates).
@@ -130,31 +135,24 @@ namespace SchwarzschildDevice
         // in order to evolve the photon backwards from the camera.
         v[0] = (-b + sqrt(b*b - 4.*a*c)) / (2.*a);
     }
-};
 
-// Advances with a step of RKF45.
-void
-advanceRayRKF45(
-    Schwarzschild *metric,
-    Real x[4],
-    Real v[4],
-    Real const &e,
-    Real const &h_squared,
-    Real &dl,
-    Real const &tolerance
-)
-{
-    // Real const max_dl { 4. };
+    // Advances with a step of RKF45.
+    __device__ void
+    advanceRayRKF45(
+        Real x[4],
+        Real v[4],
+        Real k_all[6][8],
+        Real const &e,
+        Real const &h_squared,
+        Real &dl,
+        Real const &tolerance,
+        bool &stop_advance
+    )
+    {
+        // Real const max_dl { 4. };
 
-    Real xv_4[8];
-    Real xv_5[8];
-    bool success { false };
-
-    while (!success) {
-        success = true;
-
-        // Intermediate derivatives for RKF45.
-        Real k_all[6][8];
+        Real xv_4[8];
+        Real xv_5[8];
 
         // Calculate the 6 k-vectors.
         for (int k_num { 0 }; k_num < 6; k_num++) {
@@ -164,7 +162,7 @@ advanceRayRKF45(
             // it has no effect on the derivative function (for now?).
 
             // Loop does nothing for k_0.
-            Real *B_set { RKF45::B[k_num] };
+            Real *B_set { B[k_num] };
             for (int i { 0 }; i < k_num; i++) {
                 #pragma unroll
                 for (int mu { 0 }; mu < 8; mu++) {
@@ -175,14 +173,14 @@ advanceRayRKF45(
             // Calculate spatial velocity derivatives with the central
             // pseudo-Newtonian potential/force field.
             Real accel[3];
-            metric->calculateCentralAccel(&xv_[1], h_squared, accel);
+            calculateCentralAccel(&xv_[1], h_squared, accel);
 
             // Current set of derivatives to modify.
             Real *k { &k_all[k_num][0] };
             // Set k components.
             // 4-position derivatives are already known.
             // t is evolved using the conserved pseudo-energy, e.
-            k[0] = e / (1. - metric->schwarzschildRadius() / rMagnitude(&xv_[1]));
+            k[0] = e / (1. - s_radius * rInvMagnitudeDev(&xv_[1]));
             #pragma unroll
             for (int i = 1; i < 4; i++) {
                 k[i] = xv_[4 + i] * dl;
@@ -206,8 +204,8 @@ advanceRayRKF45(
         for (int i { 0 }; i < 6; i++) {
             #pragma unroll
             for (int mu { 0 }; mu < 8; mu++) {
-                xv_4[mu] += RKF45::c_k_4[i] * k_all[i][mu];
-                xv_5[mu] += RKF45::c_k_5[i] * k_all[i][mu];
+                xv_4[mu] += c_k_4[i] * k_all[i][mu];
+                xv_5[mu] += c_k_5[i] * k_all[i][mu];
             }
         }
 
@@ -215,39 +213,34 @@ advanceRayRKF45(
         // bool advance { true };
         Real max_error { 0. };
 
-        // for (int mu { 0 }; mu < 4; mu++) {
-        //     Real error { fabsf(xv_5[mu] - xv_4[mu]) };
-        //     advance = advance && (error < tolerance);
-        //     bool replace_error { error > max_error };
-        //     max_error = (replace_error * error) + (!replace_error * max_error);
-        // }
-        // If stop_advance is true, don't advance no matter what.
-        // advance = advance && (!stop_advance);
-
-        #pragma unroll
+        bool advance { true };
         for (int mu { 0 }; mu < 8; mu++) {
-            Real error { std::abs(xv_5[mu] - xv_4[mu]) };
-            if (error > max_error) max_error = error;
+            Real error { fabsf(xv_5[mu] - xv_4[mu]) };
+            advance = advance && (error < tolerance);
+            bool replace_error { error > max_error };
+            max_error = (replace_error * error) + (!replace_error * max_error);
+        }
+        // If stop_advance is true, don't advance no matter what.
+        advance = advance && (!stop_advance);
+
+        // Advance positions and velocities.
+        // Doesn't advance until tolerance checks pass.
+        #pragma unroll
+        for (int mu { 0 }; mu < 4; mu++) {
+            // Won't advance at all if stop_advance is true.
+            x[mu] += xv_5[mu] * advance;
+            v[mu] += xv_5[4 + mu] * advance;
         }
 
-        success = max_error < tolerance;
-
         // Calculate next step size to try if tolerance checks failed.
-        dl *= 0.9 * std::pow(tolerance / max_error, 0.2);
+        dl *= 0.9 * pow(tolerance / max_error, 0.2);
+
         // Limit max step size.
         // if (dl > max_dl) dl = max_dl;
     }
+};
 
-    // Advance positions and velocities.
-    // Doesn't advance until tolerance checks pass.
-    #pragma unroll
-    for (int mu { 0 }; mu < 4; mu++) {
-        x[mu] += xv_5[mu];
-        v[mu] += xv_5[4 + mu];
-    }
-}
-
-void traceImageRKF45(
+/*void traceImageRKF45(
     Schwarzschild *metric,
     unsigned int cam_pixels[2],
     unsigned char *cam_pixel_array,
@@ -349,22 +342,22 @@ void traceImageRKF45(
             }
         }
     }
-}
+}*/
 
 // CUDA kernels.
 
 // Spacetime raytracing kernel. Should be called from a Tracer object.
 // Uses RKF45 (Runge-Kutta-Fehlberg adaptive step).
 // Modifies the array d_cam_pixel_array in place with the traced image.
-/*__global__ void
+__global__ void
 traceImage(
-    unsigned int d_cam_pixels[2],
+    unsigned int const d_cam_pixels[2],
     unsigned char *d_cam_pixel_array,
-    Real *d_cam_fov_conv_factor,
+    Real const &d_cam_fov_conv_factor,
     Real d_cam_coords[8],
-    Real *d_d_phi,
-    Real *d_d_theta,
-    int d_sky_pixels[2],
+    Real const &d_d_phi,
+    Real const &d_d_theta,
+    int const d_sky_pixels[2],
     unsigned char *d_sky_map
 )
 {
@@ -372,25 +365,19 @@ traceImage(
     // Big thread blocks are more likely to need different numbers of steps (thread divergence)
     // and require more iteration over the shared array pixel_done.
 
-    const Real tolerance { 1e-4 };
-    // Set initial step length to maximum; it will probably be cut down automatically.
-    Real d_l { 5. };
+    Real const tolerance { SchwarzschildDevice::s_radius * 1e-5 };
 
     // 32 bytes each.
     __shared__ bool pixel_valid[8][4];
     __shared__ bool pixel_done[8][4];
+    // Intermediate derivatives for RKF45.
+    __shared__ Real k_all[8][4][6][8];
+
     // Metric tensor. Should be okay to keep this in registers (64 bytes).
     Real g[4][4];
-    // Intermediate derivatives for RKF45.
-    __shared__ Real k[8][4][6][8];
-    // Keep the Christoffel symbols in shared memory for safety. These can probably be stored
-    // safely in registers (256 bytes per core, 8 KB per block), but it might be bad on older GPUs.
-    __shared__ Real c_symbols[8][4][4][4][4];
-    // Metric derivatives.
-    __shared__ Real g_derivs[8][4][4][4][4];
 
-    unsigned int pixel_x { blockIdx.x * blockDim.x + threadIdx.x };
-    unsigned int pixel_y { blockIdx.y * blockDim.y + threadIdx.y };
+    unsigned int const pixel_x { blockIdx.x * blockDim.x + threadIdx.x };
+    unsigned int const pixel_y { blockIdx.y * blockDim.y + threadIdx.y };
 
     // If false, then the pixel is outside the image; ignore it.
     pixel_valid[threadIdx.x][threadIdx.y] = (pixel_x < d_cam_pixels[0]) && (pixel_y < d_cam_pixels[1]);
@@ -399,6 +386,7 @@ traceImage(
 
     int num_valid_pixels { 0 };
     for (int i { 0 }; i < 8; i++) {
+        #pragma unroll
         for (int j { 0 }; j < 4; j++) {
             num_valid_pixels += 1 * pixel_valid[i][j];
         }
@@ -413,31 +401,52 @@ traceImage(
     }
 
     // Initial metric tensor at the camera coordinates. Same for all rays.
-    Dev::calculateMetric(&xv[0], g);
+    SchwarzschildDevice::calculateMetric(xv, g);
     // Calculate ray starting velocity.
-    Dev::calculateStartV(static_cast<Real>(pixel_x), static_cast<Real>(pixel_y), g, &xv[4],
+    SchwarzschildDevice::calculateStartV(static_cast<Real>(pixel_x), static_cast<Real>(pixel_y), g, &xv[4],
         d_cam_pixels, &d_cam_coords[4], d_cam_fov_conv_factor);
 
     // TEST: This might be unnecessary.
     // Potential thread divergence due to Taylor expansions in calculateMetric and calculateStartV.
     __syncthreads();
 
+    // Pseudo-energy of the photon; acts as a conserved quantity
+    // used to evolve t.
+    // FIXME: Doesn't work at the event horizon.
+    Real const e = xv[4] * (1. - SchwarzschildDevice::s_radius * rInvMagnitudeDev(&xv[1]));
+
+    // Get the angular momentum per unit mass (i.e. treat it as
+    // a classic, massive particle).
+    // "Mass" is a bit of a misnomer here, it's just |r x v|.
+    Real L[3];
+    crossProduct(&xv[1], &xv[5], L);
+    Real const h_squared = L[0]*L[0] + L[1]*L[1] + L[2]*L[2];
+
+    // Set initial step length; it will probably be changed automatically.
+    Real dl { 1. };
+
     // Main raytracing loop. Iterates until all the pixels in the thread block are done.
     // Should avoid thread divergence.
     int num_pixels_done { 0 };
     while (num_pixels_done != num_valid_pixels) {
-        pixel_done[threadIdx.x][threadIdx.y] = Dev::terminateRay(&xv[0]) || pixel_done[threadIdx.x][threadIdx.y];
+        pixel_done[threadIdx.x][threadIdx.y] = SchwarzschildDevice::terminateRay(xv) || pixel_done[threadIdx.x][threadIdx.y];
 
-        advanceRayRKF45(&xv[0], &xv[4], g, &g_derivs[threadIdx.x][threadIdx.y][0],
-            &c_symbols[threadIdx.x][threadIdx.y][0], d_l, &k[threadIdx.x][threadIdx.y][0],
-            pixel_done[threadIdx.x][threadIdx.y], tolerance);
+        SchwarzschildDevice::advanceRayRKF45(
+            &xv[0],
+            &xv[4],
+            &k_all[threadIdx.x][threadIdx.y][0],
+            e,
+            h_squared,
+            dl,
+            tolerance,
+            pixel_done[threadIdx.x][threadIdx.y]
+        );
 
         // Might be unnecessary; need to test.
         __syncthreads();
 
         // Small thread blocks are useful here to reduce summations.
         num_pixels_done = 0;
-        #pragma unroll
         for (int i = 0; i < 8; i++) {
             #pragma unroll
             for (int j = 0; j < 4; j++) {
@@ -455,10 +464,10 @@ traceImage(
     // Convert to pixel locations on the sky map; floor the number.
     // Phi goes anticlockwise, so 2.*pi - phi transforms it to stop
     // the image using the wrong phi coordinates.
-    unsigned int sky_x { (unsigned int)((2. * pi_device - phi) / *d_d_phi) };
-    unsigned int sky_y { (unsigned int)(theta / *d_d_theta) };
+    unsigned int const sky_x { (unsigned int)((2. * pi_device - phi) / d_d_phi) };
+    unsigned int const sky_y { (unsigned int)(theta / d_d_theta) };
     // Address of the pixel RGB colour.
-    unsigned char *colour { &d_sky_map[3 * (sky_y * d_sky_pixels[0] + sky_x)] };
+    unsigned char const *colour { &d_sky_map[3 * (sky_y * d_sky_pixels[0] + sky_x)] };
 
     // Write camera image.
     // Some thread divergence if the block goes off the camera view is inevitable
@@ -466,10 +475,11 @@ traceImage(
     // with good choices of resolutions and kernel sizes.
     if (pixel_valid[threadIdx.x][threadIdx.y]) {
         // TODO: Set pixels to black if they enter a black hole (when viewed from beyond the photon sphere..).
-        unsigned int pixel_index { 3 * (pixel_y * d_cam_pixels[0] + pixel_x) };
+        unsigned int const pixel_index { 3 * (pixel_y * d_cam_pixels[0] + pixel_x) };
+        bool const set_to_black = SchwarzschildDevice::setToBlack(xv);
         #pragma unroll
         for (unsigned int i = 0; i < 3; i++) {
-            d_cam_pixel_array[pixel_index + i] = colour[i];
+            d_cam_pixel_array[pixel_index + i] = colour[i] * set_to_black;
         }
     }
-}*/
+}

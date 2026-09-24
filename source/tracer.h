@@ -2,6 +2,7 @@
 #define TRACER
 
 #include "utilities/float_defn.h"
+#include "trace_kernel_utils.h"
 #include "trace_kernel_utils_CPU.h"
 
 /*

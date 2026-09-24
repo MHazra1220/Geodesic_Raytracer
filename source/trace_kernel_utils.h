@@ -13,6 +13,8 @@
 // pi is needed by the host when importing sky maps and used by the device when getting pixels.
 __device__ __constant__ Real pi_device = 3.141592653589793;
 
+__device__ Real rSquaredDev(Real const r[3]);
+
 // Passing classes into CUDA kernels is a bit of a pain; hence defined with namespaces.
 namespace SchwarzschildDevice
 {
@@ -46,26 +48,28 @@ namespace SchwarzschildDevice
     __device__ void makeVNull(Real v[4], Real const g[4][4]);
 
     // Advances with a step of RKF45.
-    void advanceRayRKF45(
+    __device__ void advanceRayRKF45(
         Real x[4],
         Real v[4],
+        Real k_all[6][8],
         Real const &e,
         Real const &h_squared,
         Real &dl,
-        Real const &tolerance
+        Real const &tolerance,
+        bool &stop_advance
     );
 };
 
 // CUDA kernels.
-/*__global__ void traceImage(
-    unsigned int d_cam_pixels[2],
+__global__ void traceImage(
+    unsigned int const d_cam_pixels[2],
     unsigned char *d_cam_pixel_array,
-    Real *d_cam_fov_conv_factor,
+    Real const &d_cam_fov_conv_factor,
     Real d_cam_coords[8],
-    Real *d_d_phi,
-    Real *d_d_theta,
-    int d_sky_pixels[2],
+    Real const &d_d_phi,
+    Real const &d_d_theta,
+    int const d_sky_pixels[2],
     unsigned char *d_sky_map
-);*/
+);
 
 #endif // TRACE_KERNEL_UTILS

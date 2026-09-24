@@ -15,7 +15,7 @@ __host__ __device__ void rotateVecByQuat(Real vec[4], Real rotation_quat[4], Rea
 Real rMagnitude(Real const r[3]);
 __device__ Real rMagnitudeDev(Real const r[3]);
 __device__ Real rInvMagnitudeDev(Real const r[3]);
-__host__ __device__ Real rSquared(Real const r[3]);
+Real rSquared(Real const r[3]);
 
 // Calculates the scalar product of a velocity with in some metric.
 __host__ __device__ Real scalarProduct(Real const v[4], Real const g[4][4]);
