@@ -41,7 +41,7 @@ __host__ __device__ void crossProduct(Real const u[3], Real const v[3], Real cro
 }
 
 // Calculate the Hamilton (quaternionic) product of two quaternions.
-void
+__host__ __device__ void
 quatProduct(Real const u[4], Real const v[4], Real result[4])
 {
     result[0] = u[0]*v[0] - (u[1]*v[1] + u[2]*v[2] + u[3]*v[3]);
@@ -54,146 +54,26 @@ quatProduct(Real const u[4], Real const v[4], Real result[4])
     }
 }
 
-// Rotates a 3D Cartesian vector, vec (a pure quaternion), by rotation_quat.
-// result will be the rotated vector represented as a pure quaternion.
-void
-rotateVecByQuat(Real vec[4], Real rotation_quat[4], Real result[4])
-{
-    // Assume that rotation_quat is normalised; checking isn't worth the cost.
-    Real rotation_quat_inverse[4];
-    rotation_quat_inverse[0] = rotation_quat[0];
-    rotation_quat_inverse[1] = -rotation_quat[1];
-    rotation_quat_inverse[2] = -rotation_quat[2];
-    rotation_quat_inverse[3] = -rotation_quat[3];
-    Real intermediate_result[4];
-    quatProduct(vec, rotation_quat_inverse, intermediate_result);
-    quatProduct(rotation_quat, intermediate_result, result);
-}
-
-void
-Schwarzschild::calculateMetric(Real r[4], Real g[4][4])
-{
-    Real r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
-    Real r_mag { std::sqrt(r_squared) };
-    Real mult_factor { s_radius / (r_squared * (r_mag - s_radius)) };
-    for (int mu { 1 }; mu < 4; mu++)
-    {
-        g[0][mu] = 0.;
-        g[mu][0] = 0.;
-        for (int nu { mu }; nu < 4; nu++)
-        {
-            g[mu][nu] = mult_factor * r[mu] * r[nu];
-            g[nu][mu] = g[mu][nu];
-        }
-    }
-    g[0][0] = -1. + s_radius / r_mag;
-    g[1][1] += 1.;
-    g[2][2] += 1.;
-    g[3][3] += 1.;
-}
-
-// Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
-// Overwrites result into v. Assumes Minkowski/Cartesian coordinates.
-void
-Schwarzschild::calculateStartV(
-    Real const x,
-    Real const y,
-    Real const g[4][4],
-    Real v[4],
-    unsigned int const cam_pixels[2],
-    Real cam_quat[4],
-    Real const &cam_fov_conv_factor
-)
-{
-    // Local phi and theta coordinates in the camera's reference frame.
-    // Negative in phi because phi increases anticlockwise around the local z-axis.
-    Real phi { -((x - 0.5 * cam_pixels[0]) * (cam_fov_conv_factor)) };
-    Real theta { (y - 0.5 * cam_pixels[1]) * (cam_fov_conv_factor) + 0.5 * pi_host };
-    // Minkowski/Cartesian coordinates.
-    Real unrotated_v[4];
-    unrotated_v[0] = 0.;
-    unrotated_v[1] = std::sin(theta) * std::cos(phi);
-    unrotated_v[2] = std::sin(theta) * std::sin(phi);
-    unrotated_v[3] = std::cos(theta);
-    // Rotate to align with the camera's orientation in the global frame.
-    rotateVecByQuat(unrotated_v, cam_quat, v);
-    // Modify the t-component to make the velocity null.
-    makeVNull(v, g);
-}
-
-// Make a velocity vector null (assuming Minkowski coordinates).
-void
-Schwarzschild::makeVNull(Real v[4], Real const g[4][4])
-{
-    Real a { g[0][0] };
-    Real b { 0. };
-    Real c { 0. };
-
-    #pragma unroll
-    for (int i { 1 }; i < 4; i++)
-    {
-        b += g[0][i]*v[i];
-    }
-    b *= 2.;
-
-    // Calculate c.
-    for (int i { 1 }; i < 4; i++)
-    {
-        Real contraction { 0. };
-        #pragma unroll
-        for (int j { 1 }; j < 4; j++)
-        {
-            contraction += g[i][j]*v[j];
-        }
-        c += contraction*v[i];
-    }
-
-    // Take the positive root solution. a = g_00 is usually negative, so this normally makes v[0]
-    // in order to evolve the photon backwards from the camera. Makes no difference for static metrics.
-    v[0] = (-b + std::sqrt(b*b - 4.*a*c)) / (2.*a);
-}
-
-// Pseudo-Newtonian central force that corresponds to null geodesics.
-void
-Schwarzschild::calculateCentralAccel(Real const r[3], Real const &h_squared, Real accel[3])
-{
-    Real const r_norm { rMagnitude(r) };
-    Real const scale_factor = (-1.5 * s_radius * h_squared) / std::pow(r_norm, 5);
-    #pragma unroll
-    for (int i { 0 }; i < 3; i++) {
-        accel[i] = scale_factor * r[i];
-    }
-}
-
-// Schwarzschild metric functions.
-//--------------------------------
-
-bool
-Schwarzschild::terminateRay(Real const r[4])
-{
-    Real const r_squared { rSquared(&r[1]) };
-    return (r_squared < inner_limit_squared) || (r_squared > outer_limit_squared);
-}
-
-bool
-Schwarzschild::setToBlack(Real const r[4])
-{
-    // Fallen into the photon sphere/black hole if true.
-    return rSquared(&r[1]) < inner_limit_squared;
-}
-
 Real
-Schwarzschild::schwarzschildRadius() const
-{
-    return s_radius;
-}
-
-Real rMagnitude(Real const r[3])
+rMagnitude(Real const r[3])
 {
     return std::sqrt(rSquared(r));
 }
 
-Real rSquared(Real const r[3])
+__device__ Real
+rMagnitudeDev(Real const r[3])
+{
+    return sqrt(rSquared(r));
+}
+
+__device__ Real
+rInvMagnitudeDev(Real const r[3])
+{
+    return rsqrt(rSquared(r));
+}
+
+__host__ __device__ Real
+rSquared(Real const r[3])
 {
     return r[0]*r[0] + r[1]*r[1] + r[2]*r[2];
 }
@@ -201,7 +81,7 @@ Real rSquared(Real const r[3])
 // Calculates the scalar product of a velocity with a given metric tensor.
 // Tries to use as little memory as possible; the goal
 // is to minimize register occupancy, not computation.
-Real
+__host__ __device__ Real
 scalarProduct(Real const v[4], Real const g[4][4])
 {
     Real result { 0. };
@@ -220,7 +100,7 @@ scalarProduct(Real const v[4], Real const g[4][4])
 }
 
 // Inverts a symmetric 4x4 metric; needed to get the inverse metric for the Christoffel symbols.
-void
+__host__ __device__ void
 invertSymmetric4Metric(Real const m[4][4], Real m_inv[4][4])
 {
     // Computationally fastest way for such a small system is probably
@@ -284,6 +164,255 @@ invertSymmetric4Metric(Real const m[4][4], Real m_inv[4][4])
         }
     }
 }
+
+// Rotates a 3D Cartesian vector, vec (a pure quaternion), by rotation_quat.
+// result will be the rotated vector represented as a pure quaternion.
+__host__ __device__ void
+rotateVecByQuat(Real vec[4], Real rotation_quat[4], Real result[4])
+{
+    // Assume that rotation_quat is normalised; checking isn't worth the cost.
+    Real rotation_quat_inverse[4];
+    rotation_quat_inverse[0] = rotation_quat[0];
+    rotation_quat_inverse[1] = -rotation_quat[1];
+    rotation_quat_inverse[2] = -rotation_quat[2];
+    rotation_quat_inverse[3] = -rotation_quat[3];
+    Real intermediate_result[4];
+    quatProduct(vec, rotation_quat_inverse, intermediate_result);
+    quatProduct(rotation_quat, intermediate_result, result);
+}
+
+// ----------------
+// Host functions for the Schwarzschild metric.
+
+void
+Schwarzschild::calculateMetric(Real const r[4], Real g[4][4])
+{
+    Real r_squared { rSquared(&r[1]) };
+    Real r_mag { std::sqrt(r_squared) };
+    Real mult_factor { s_radius / (r_squared * (r_mag - s_radius)) };
+    for (int mu { 1 }; mu < 4; mu++)
+    {
+        g[0][mu] = 0.;
+        g[mu][0] = 0.;
+        for (int nu { mu }; nu < 4; nu++)
+        {
+            g[mu][nu] = mult_factor * r[mu] * r[nu];
+            g[nu][mu] = g[mu][nu];
+        }
+    }
+    g[0][0] = -1. + s_radius / r_mag;
+    g[1][1] += 1.;
+    g[2][2] += 1.;
+    g[3][3] += 1.;
+}
+
+// Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
+// Overwrites result into v. Assumes Minkowski/Cartesian coordinates.
+void
+Schwarzschild::calculateStartV(
+    Real const x,
+    Real const y,
+    Real const g[4][4],
+    Real v[4],
+    unsigned int const cam_pixels[2],
+    Real cam_quat[4],
+    Real const &cam_fov_conv_factor
+)
+{
+    // Local phi and theta coordinates in the camera's reference frame.
+    // Negative in phi because phi increases anticlockwise around the local z-axis.
+    Real phi { -((x - 0.5 * cam_pixels[0]) * (cam_fov_conv_factor)) };
+    Real theta { (y - 0.5 * cam_pixels[1]) * (cam_fov_conv_factor) + 0.5 * pi_host };
+    // Minkowski/Cartesian coordinates.
+    Real unrotated_v[4];
+    unrotated_v[0] = 0.;
+    unrotated_v[1] = std::sin(theta) * std::cos(phi);
+    unrotated_v[2] = std::sin(theta) * std::sin(phi);
+    unrotated_v[3] = std::cos(theta);
+    // Rotate to align with the camera's orientation in the global frame.
+    rotateVecByQuat(unrotated_v, cam_quat, v);
+    // Modify the t-component to make the velocity null.
+    makeVNull(v, g);
+}
+
+// Pseudo-Newtonian central force that corresponds to null geodesics.
+void
+Schwarzschild::calculateCentralAccel(Real const r[3], Real const &h_squared, Real accel[3])
+{
+    Real const r_norm { rMagnitude(r) };
+    Real const scale_factor = (-1.5 * s_radius * h_squared) / std::pow(r_norm, 5);
+    #pragma unroll
+    for (int i { 0 }; i < 3; i++) {
+        accel[i] = scale_factor * r[i];
+    }
+}
+
+bool
+Schwarzschild::terminateRay(Real const r[4])
+{
+    Real const r_squared { rSquared(&r[1]) };
+    return (r_squared < inner_limit_squared) || (r_squared > outer_limit_squared);
+}
+
+bool
+Schwarzschild::setToBlack(Real const r[4])
+{
+    // Fallen into the photon sphere/black hole if true.
+    return rSquared(&r[1]) < inner_limit_squared;
+}
+
+Real
+Schwarzschild::schwarzschildRadius() const
+{
+    return s_radius;
+}
+
+// Make a velocity vector null (assuming Cartesian Schwarzschild coordinates).
+void
+Schwarzschild::makeVNull(Real v[4], Real const g[4][4])
+{
+    Real const a { g[0][0] };
+    Real b { 0. };
+    Real c { 0. };
+
+    #pragma unroll
+    for (int i { 1 }; i < 4; i++)
+    {
+        b += g[0][i]*v[i];
+    }
+    b *= 2.;
+
+    // Calculate c.
+    for (int i { 1 }; i < 4; i++)
+    {
+        Real contraction { 0. };
+        #pragma unroll
+        for (int j { 1 }; j < 4; j++)
+        {
+            contraction += g[i][j]*v[j];
+        }
+        c += contraction*v[i];
+    }
+
+    // Take the positive root solution. a = g_00 is usually negative, so this normally makes v[0]
+    // in order to evolve the photon backwards from the camera.
+    v[0] = (-b + std::sqrt(b*b - 4.*a*c)) / (2.*a);
+}
+
+// ----------------
+
+// CUDA device functions for the Schwarzschild metric.
+namespace SchwarzschildDevice
+{
+    __device__ void
+    calculateMetric(Real const r[4], Real g[4][4])
+    {
+        Real r_squared { rSquared(&r[1]) };
+        Real r_mag { sqrt(r_squared) };
+        Real mult_factor { s_radius / (r_squared * (r_mag - s_radius)) };
+        for (int mu { 1 }; mu < 4; mu++)
+        {
+            g[0][mu] = 0.;
+            g[mu][0] = 0.;
+            for (int nu { mu }; nu < 4; nu++)
+            {
+                g[mu][nu] = mult_factor * r[mu] * r[nu];
+                g[nu][mu] = g[mu][nu];
+            }
+        }
+        g[0][0] = -1. + s_radius / r_mag;
+        g[1][1] += 1.;
+        g[2][2] += 1.;
+        g[3][3] += 1.;
+    }
+
+    // Calculates the start velocity of a photon at pixel (x, y), where (0, 0) is the top-left corner of the camera.
+    // Overwrites result into v. Assumes Minkowski/Cartesian coordinates.
+    __device__ void
+    calculateStartV(
+        Real const x,
+        Real const y,
+        Real const g[4][4],
+        Real v[4],
+        unsigned int const cam_pixels[2],
+        Real cam_quat[4],
+        Real const &cam_fov_conv_factor
+    )
+    {
+        // Local phi and theta coordinates in the camera's reference frame.
+        // Negative in phi because phi increases anticlockwise around the local z-axis.
+        Real phi { -((x - 0.5f * cam_pixels[0]) * (cam_fov_conv_factor)) };
+        Real theta { (y - 0.5f * cam_pixels[1]) * (cam_fov_conv_factor) + 0.5f * pi_device };
+        // Minkowski/Cartesian coordinates.
+        Real unrotated_v[4];
+        unrotated_v[0] = 0.;
+        unrotated_v[1] = sin(theta) * cos(phi);
+        unrotated_v[2] = sin(theta) * sin(phi);
+        unrotated_v[3] = cos(theta);
+        // Rotate to align with the camera's orientation in the global frame.
+        rotateVecByQuat(unrotated_v, cam_quat, v);
+        // Modify the t-component to make the velocity null.
+        makeVNull(v, g);
+    }
+
+    // Pseudo-Newtonian central force that corresponds to null geodesics.
+    __device__ void
+    calculateCentralAccel(Real const r[3], Real const &h_squared, Real accel[3])
+    {
+        Real const r_norm { rInvMagnitudeDev(r) };
+        Real const scale_factor = (-1.5 * s_radius * h_squared) * (r_norm * r_norm * r_norm * r_norm * r_norm);
+        #pragma unroll
+        for (int i { 0 }; i < 3; i++) {
+            accel[i] = scale_factor * r[i];
+        }
+    }
+
+    __device__ bool
+    terminateRay(Real const r[4])
+    {
+        Real const r_squared { rSquared(&r[1]) };
+        return (r_squared < inner_limit_squared) || (r_squared > outer_limit_squared);
+    }
+
+    __device__ bool
+    setToBlack(Real const r[4])
+    {
+        // Fallen into the photon sphere/black hole if true.
+        return rSquared(&r[1]) < inner_limit_squared;
+    }
+
+    // Make a velocity vector null (assuming Minkowski coordinates).
+    __device__ void
+    makeVNull(Real v[4], Real const g[4][4])
+    {
+        Real const a { g[0][0] };
+        Real b { 0. };
+        Real c { 0. };
+
+        #pragma unroll
+        for (int i { 1 }; i < 4; i++)
+        {
+            b += g[0][i]*v[i];
+        }
+        b *= 2.;
+
+        // Calculate c.
+        for (int i { 1 }; i < 4; i++)
+        {
+            Real contraction { 0. };
+            #pragma unroll
+            for (int j { 1 }; j < 4; j++)
+            {
+                contraction += g[i][j]*v[j];
+            }
+            c += contraction*v[i];
+        }
+
+        // Take the positive root solution. a = g_00 is usually negative, so this normally makes v[0]
+        // in order to evolve the photon backwards from the camera.
+        v[0] = (-b + sqrt(b*b - 4.*a*c)) / (2.*a);
+    }
+};
 
 // Advances with a step of RKF45.
 void
@@ -386,7 +515,7 @@ advanceRayRKF45(
         success = max_error < tolerance;
 
         // Calculate next step size to try if tolerance checks failed.
-        dl = 0.9 * dl * std::pow(tolerance / max_error, 0.2);
+        dl *= 0.9 * std::pow(tolerance / max_error, 0.2);
         // Limit max step size.
         // if (dl > max_dl) dl = max_dl;
     }
