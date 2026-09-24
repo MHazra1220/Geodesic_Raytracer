@@ -1,5 +1,6 @@
 #include <cmath>
 
+#include "float_defn.h"
 #include "math_functions.h"
 
 __host__ __device__ void crossProduct(Real const u[3], Real const v[3], Real cross[3])

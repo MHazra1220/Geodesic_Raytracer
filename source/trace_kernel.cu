@@ -3,6 +3,7 @@
 #include <omp.h>
 
 #include "utilities/float_defn.h"
+#include "utilities/math_functions.h"
 #include "trace_kernel_utils.h"
 
 // GPU constants for a future GPU-conversion.

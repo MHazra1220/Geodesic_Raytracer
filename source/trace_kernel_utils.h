@@ -2,7 +2,7 @@
 #define TRACE_KERNEL_UTILS
 
 #include "utilities/float_defn.h"
-#include "math_functions.h"
+#include "utilities/math_functions.h"
 
 // I hate having so many things here, but CUDA doesn't like modularised code; it's easier
 // to put everything the raytracing kernel uses in a single place.

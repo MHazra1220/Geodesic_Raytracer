@@ -1,4 +1,5 @@
-add_library(Math_Functions math_functions.cu)
+set(UTILITIES_DIR "utilities")
+add_subdirectory(${UTILITIES_DIR})
 
 add_library(Trace_Kernels trace_kernel.cu)
 target_compile_options(Trace_Kernels PRIVATE -Xcompiler=-fopenmp)

@@ -1,7 +1,7 @@
 #ifndef MATH_FUNCTIONS
 #define MATH_FUNCTIONS
 
-#include "utilities/float_defn.h"
+#include "float_defn.h"
 
 // Quaternionic arithmetic functions.
 
