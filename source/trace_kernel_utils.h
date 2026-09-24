@@ -13,6 +13,21 @@
 // pi is needed by the host when importing sky maps and used by the device when getting pixels.
 __device__ __constant__ Real pi_device = 3.141592653589793;
 
+namespace RKF45_GPU
+{
+    // GPU constants for RKF45.
+    __device__ __constant__ Real A[6] { 0., 2./9., 1./3., 0.75, 1., 5./6. };
+    __device__ __constant__ Real B_0[1] { 0. };    // B_0 should not be used! Exists for consistency.
+    __device__ __constant__ Real B_1[1] { 2./9. };
+    __device__ __constant__ Real B_2[2] { 1./12., 0.25 };
+    __device__ __constant__ Real B_3[3] { 69./128., -243./128., 135./64. };
+    __device__ __constant__ Real B_4[4] { -17./12., 27./4., -27./5., 16./15. };
+    __device__ __constant__ Real B_5[5] { 65./432., -5./16., 13./16., 4./27., 5./144. };
+    __device__ __constant__ Real *B[6] { &B_0[0], &B_1[0], &B_2[0], &B_3[0], &B_4[0], &B_5[0] };
+    __device__ __constant__ Real c_k_4[6] { 1./9., 0., 9./20., 16./45., 1./12., 0. };
+    __device__ __constant__ Real c_k_5[6] { 47./450., 0., 12./25., 32./225., 1./30., 6./25. };
+}
+
 __device__ Real rSquaredDev(Real const r[3]);
 
 // Passing classes into CUDA kernels is a bit of a pain; hence defined with namespaces.
