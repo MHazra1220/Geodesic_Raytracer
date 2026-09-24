@@ -12,7 +12,7 @@ int main()
     // Initial camera position and quaternion.
     // First number of pos is the time coordinate.
     Real pos[4] { 0., 10., 0., 0. };
-    // A quaternion of (1, 0, 0, 0) is the "null" quaternion and aligns the camera with the xyz axes (angle = 0),
+    // A quaternion of (1, 0, 0, 0) is the "null" quaternion and aligns the camera with the xyz axes,
     // looking along +x with +y to the left and +z straight up.
     Real quat[4] { 0., 0., 0., 1. };
     unsigned int cam_pixels[2] { 2560, 1440 };

@@ -46,7 +46,7 @@ class Schwarzschild
         // Black hole radius (Schwarzschild radius).
         // Assumed fixed for now.
         Real const s_radius { 1. };
-        // Simulation terminates if a ray gets within this radius.
+        // Simulation terminates if a ray gets within inner_limit.
         // TODO: The use of the Newtonian "magic" potential allows us to trace
         // across the event horizon. We should be able to get images from inside
         // a black hole, in which case a different halting condition is needed.
@@ -54,6 +54,9 @@ class Schwarzschild
         Real const inner_limit_squared { inner_limit * inner_limit };
         Real const outer_limit_squared { (40. * s_radius) * (40. * s_radius) };
 };
+
+Real rMagnitude(Real const r[3]);
+Real rSquared(Real const r[3]);
 
 // Calculates the scalar product of a velocity with in some metric.
 Real scalarProduct(Real const v[4], Real const g[4][4]);
@@ -64,6 +67,7 @@ void advanceRayRKF45(
     Schwarzschild *metric,
     Real x[4],
     Real v[4],
+    Real const &e,
     Real const &h_squared,
     Real &dl,
     Real const &tolerance

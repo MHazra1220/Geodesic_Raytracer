@@ -157,7 +157,7 @@ Schwarzschild::makeVNull(Real v[4], Real const g[4][4])
 void
 Schwarzschild::calculateCentralAccel(Real const r[3], Real const &h_squared, Real accel[3])
 {
-    Real r_norm { std::sqrt(r[0]*r[0] + r[1]*r[1] + r[2]*r[2]) };
+    Real const r_norm { rMagnitude(r) };
     Real const scale_factor = (-1.5 * s_radius * h_squared) / std::pow(r_norm, 5);
     #pragma unroll
     for (int i { 0 }; i < 3; i++) {
@@ -171,22 +171,31 @@ Schwarzschild::calculateCentralAccel(Real const r[3], Real const &h_squared, Rea
 bool
 Schwarzschild::terminateRay(Real const r[4])
 {
-    Real r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
+    Real const r_squared { rSquared(&r[1]) };
     return (r_squared < inner_limit_squared) || (r_squared > outer_limit_squared);
 }
 
 bool
 Schwarzschild::setToBlack(Real const r[4])
 {
-    Real r_squared { r[1] * r[1] + r[2] * r[2] + r[3] * r[3] };
     // Fallen into the photon sphere/black hole if true.
-    return r_squared < inner_limit_squared;
+    return rSquared(&r[1]) < inner_limit_squared;
 }
 
 Real
 Schwarzschild::schwarzschildRadius() const
 {
     return s_radius;
+}
+
+Real rMagnitude(Real const r[3])
+{
+    return std::sqrt(rSquared(r));
+}
+
+Real rSquared(Real const r[3])
+{
+    return r[0]*r[0] + r[1]*r[1] + r[2]*r[2];
 }
 
 // Calculates the scalar product of a velocity with a given metric tensor.
@@ -282,6 +291,7 @@ advanceRayRKF45(
     Schwarzschild *metric,
     Real x[4],
     Real v[4],
+    Real const &e,
     Real const &h_squared,
     Real &dl,
     Real const &tolerance
@@ -324,13 +334,14 @@ advanceRayRKF45(
             Real *k { &k_all[k_num][0] };
             // Set k components.
             // 4-position derivatives are already known.
-            // FIXME: For now, this scheme doesn't do anything about the time coordinate.
-            k[0] = 0.;
+            // t is evolved using the conserved pseudo-energy, e.
+            k[0] = e / (1. - metric->schwarzschildRadius() / rMagnitude(&xv_[1]));
             #pragma unroll
             for (int i = 1; i < 4; i++) {
                 k[i] = xv_[4 + i] * dl;
             }
             // Set velocity derivatives.
+            // There is no equation to evolve dt/d(lambda); k[4] just exists to maintain the array structure.
             k[4] = 0.;
             #pragma unroll
             for (int i = 1; i < 4; i++) {
@@ -422,7 +433,7 @@ void traceImageRKF45(
         Real g[4][4];
 
         // Initial metric tensor and starting velocity.
-        metric->calculateMetric(&xv[0], g);
+        metric->calculateMetric(xv, g);
         metric->calculateStartV(
             static_cast<Real>(pixel_x),
             static_cast<Real>(pixel_y),
@@ -432,6 +443,11 @@ void traceImageRKF45(
             cam_quat,
             cam_fov_conv_factor
         );
+
+        // Pseudo-energy of the photon; acts as a conserved quantity
+        // used to evolve t.
+        // FIXME: Doesn't work at the event horizon.
+        Real const e = xv[4] * (1. - metric->schwarzschildRadius() / rMagnitude(&xv[1]));
 
         // Get the angular momentum per unit mass (i.e. treat it as
         // a classic, massive particle).
@@ -445,8 +461,13 @@ void traceImageRKF45(
         Real dl { 1. };
 
         // Main raytracing loop.
-        while (!metric->terminateRay(&xv[0])) {
-            advanceRayRKF45(metric, &xv[0], &xv[4], h_squared, dl, tolerance);
+        while (!metric->terminateRay(xv)) {
+            advanceRayRKF45(metric, &xv[0], &xv[4], e, h_squared, dl, tolerance);
+            if (i == 0) {
+                metric->calculateMetric(xv, g);
+                xv[4] = e / (1. - metric->schwarzschildRadius() / rMagnitude(&xv[1]));
+                std::cout << scalarProduct(&xv[4], g) << "\n";
+            }
         }
 
         // Use the velocity to take the photon to infinity and sample the sky box.
@@ -464,7 +485,7 @@ void traceImageRKF45(
         int sky_y { (int)(theta / d_theta) };
         // Address of the pixel RGB colour.
         unsigned char *colour { &sky_map[3 * (sky_y * sky_pixels[0] + sky_x)] };
-        // Fallen into a photon sphere/black hole if true.
+        // Fallen into the photon sphere/black hole if true.
         bool set_to_black = metric->setToBlack(&xv[0]);
 
         // Write camera image.
