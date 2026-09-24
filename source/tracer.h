@@ -3,6 +3,7 @@
 
 #include "utilities/float_defn.h"
 #include "trace_kernel_utils.h"
+#include "trace_kernel_utils_CPU.h"
 
 /*
  *  Metrics are currently defined in coordinates of (ct, x, y, z)

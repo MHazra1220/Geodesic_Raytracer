@@ -19,7 +19,7 @@ int main()
     Real cam_fov { 120. };
 
     // Path to output the image (for now). Want to create a "real-time" view later on.
-    char output_image_path[] { "/home/mh2001/Documents/Programming/General_Relativity/Geodesic_Raytracer/output_images/schwarzschild_test_f64.jpg" };
+    char output_image_path[] { "/home/mh2001/Documents/Programming/General_Relativity/Geodesic_Raytracer/output_images/schwarzschild_test_f32.jpg" };
 
     Tracer tracer_test { pos, quat, cam_pixels, cam_fov, sky_map };
     tracer_test.traceImage();
