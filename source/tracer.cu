@@ -1,6 +1,6 @@
 #include "utilities/float_defn.h"
 #include "tracer.h"
-#include "trace_kernel_utils.h"
+#include "trace_kernel_utils_CPU.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "STB_IO/stb_image.h"
