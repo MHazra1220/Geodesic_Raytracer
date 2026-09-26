@@ -25,8 +25,8 @@ checkCudaError(cudaError_t err, std::string error_msg)
 }
 
 Tracer::Tracer(
-    Real initial_pos[4],
-    Real initial_quat[4],
+    Real const initial_pos[4],
+    Real const initial_quat[4],
     unsigned int cam_pixels[2],
     Real cam_fov,
     char skymap_file[]
@@ -169,8 +169,6 @@ Tracer::traceImageSchwarzschild()
     cudaError_t err { cudaSuccess };
     err = cudaMemcpy(cam_pixel_array, d_cam_pixel_array, image_mem_size, cudaMemcpyDeviceToHost);
     checkCudaError(err, "Error: failed to copy camera pixel array from device to host.");
-    err = cudaMemcpy(cam_coords, d_cam_coords, 8 * sizeof(Real), cudaMemcpyDeviceToHost);
-    checkCudaError(err, "Error: failed to copy cam coords from device to host.");
 }
 
 // Save traced image. Must be copied to host first.

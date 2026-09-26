@@ -20,8 +20,8 @@ class Tracer
 {
     public:
         Tracer(
-            Real initial_pos[4],
-            Real initial_quat[4],
+            Real const initial_pos[4],
+            Real const initial_quat[4],
             unsigned int cam_pixels[2],
             Real cam_fov,
             char skymap_file[]

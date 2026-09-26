@@ -246,9 +246,7 @@ namespace SchwarzschildDevice
         }
 
         // Test truncation error tolerances in position.
-        // bool advance { true };
         Real max_error { 0. };
-
         bool advance { true };
         for (int mu { 0 }; mu < 8; mu++) {
             Real error { fabsf(xv_5[mu] - xv_4[mu]) };
@@ -340,17 +338,16 @@ traceImageSchwarzschildKernel(
 
     __syncthreads();
 
-    // Pseudo-energy of the photon; acts as a conserved quantity
-    // used to evolve t.
+    // Pseudo-energy of the photon; acts as a conserved quantity to evolve t.
     // FIXME: Doesn't work at the event horizon.
-    Real const e = xv[4] * (1. - SchwarzschildDevice::s_radius * rInvMagnitudeDev(&xv[1]));
+    Real const e { xv[4] * (1. - SchwarzschildDevice::s_radius * rInvMagnitudeDev(&xv[1])) };
 
     // Get the angular momentum per unit mass (i.e. treat it as
     // a classic, massive particle).
     // "Mass" is a bit of a misnomer here, it's just |r x v|.
     Real L[3];
     crossProductDev(&xv[1], &xv[5], L);
-    Real const h_squared = L[0]*L[0] + L[1]*L[1] + L[2]*L[2];
+    Real const h_squared { L[0]*L[0] + L[1]*L[1] + L[2]*L[2] };
 
     // Set initial step length; it will probably be changed automatically.
     Real dl { 1. };
@@ -389,7 +386,7 @@ traceImageSchwarzschildKernel(
     Real phi { atan2(xv[6], xv[5]) };
     // Move into the range 0 to 2*pi if phi < 0.
     phi += 2. * pi_device * (phi < 0.);
-    Real theta { acos(xv[7] * rnorm3df(xv[5], xv[6], xv[7])) };
+    Real theta { acos(xv[7] * rnorm3d(xv[5], xv[6], xv[7])) };
 
     // Convert to pixel locations on the sky map; floor the number.
     // Phi goes anticlockwise, so 2.*pi - phi transforms it to stop
