@@ -19,4 +19,4 @@ add_executable(main.sh main.cu)
 
 add_subdirectory(${SOURCE_DIR})
 # target_compile_options(Tracer PRIVATE "-diag-suppress 550")
-target_link_libraries(main.sh PRIVATE Tracer)
+target_link_libraries(main.sh PRIVATE Tracer Tracer_CPU)

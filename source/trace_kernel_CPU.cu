@@ -290,12 +290,12 @@ void traceImageRKF45(
         metric->calculateMetric(xv, g);
         metric->calculateStartV(
             static_cast<Real>(pixel_x),
-                                static_cast<Real>(pixel_y),
-                                g,
-                                &xv[4],
-                                cam_pixels,
-                                cam_quat,
-                                cam_fov_conv_factor
+            static_cast<Real>(pixel_y),
+            g,
+            &xv[4],
+            cam_pixels,
+            cam_quat,
+            cam_fov_conv_factor
         );
 
         // Pseudo-energy of the photon; acts as a conserved quantity
@@ -320,7 +320,6 @@ void traceImageRKF45(
             if (i == 0) {
                 metric->calculateMetric(xv, g);
                 xv[4] = e / (1. - metric->schwarzschildRadius() / rMagnitude(&xv[1]));
-                std::cout << scalarProduct(&xv[4], g) << "\n";
             }
         }
 
@@ -335,25 +334,18 @@ void traceImageRKF45(
             // Convert to pixel locations on the sky map; floor the number.
             // Phi goes anticlockwise, so 2.*pi - phi transforms it to stop
             // the image using the wrong phi coordinates.
-            int sky_x { (int)((2. * pi_host - phi) / d_phi) };
-            int sky_y { (int)(theta / d_theta) };
+            int const sky_x { (int)((2. * pi_host - phi) / d_phi) };
+            int const sky_y { (int)(theta / d_theta) };
             // Address of the pixel RGB colour.
-            unsigned char *colour { &sky_map[3 * (sky_y * sky_pixels[0] + sky_x)] };
+            unsigned char const *colour { &sky_map[3 * (sky_y * sky_pixels[0] + sky_x)] };
             // Fallen into the photon sphere/black hole if true.
-            bool set_to_black = metric->setToBlack(&xv[0]);
+            bool const set_to_black = metric->setToBlack(&xv[0]);
 
             // Write camera image.
-            // Some thread divergence may occur here in a GPU rewrite.
-            // TODO: Set pixels to black if they enter a black hole (when viewed from beyond the photon sphere).
-            unsigned int pixel_index { 3 * (pixel_y * cam_pixels[0] + pixel_x) };
+            unsigned int const pixel_index { 3 * (pixel_y * cam_pixels[0] + pixel_x) };
             #pragma unroll
             for (unsigned int j = 0; j < 3; j++) {
-                if (!set_to_black) {
-                    cam_pixel_array[pixel_index + j] = colour[j];
-                }
-                else {
-                    cam_pixel_array[pixel_index + j] = 0;
-                }
+                cam_pixel_array[pixel_index + j] = colour[j] * !set_to_black;
             }
     }
 }

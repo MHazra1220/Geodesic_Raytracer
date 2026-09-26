@@ -28,7 +28,15 @@ namespace RKF45_GPU
     __device__ __constant__ Real c_k_5[6] { 47./450., 0., 12./25., 32./225., 1./30., 6./25. };
 }
 
+__device__ Real rMagnitudeDev(Real const r[3]);
+__device__ Real rInvMagnitudeDev(Real const r[3]);
 __device__ Real rSquaredDev(Real const r[3]);
+__device__ void crossProductDev(Real const u[3], Real const v[3], Real cross[3]);
+// Calculate the Hamilton (quaternionic) product of two quaternions.
+__device__ void quatProductDev(Real const u[4], Real const v[4], Real result[4]);
+// Rotates a 3D Cartesian vector, vec (a pure quaternion), by rotation_quat.
+// result will be the rotated vector represented as a pure quaternion.
+__device__ void rotateVecByQuatDev(Real vec[4], Real rotation_quat[4], Real result[4]);
 
 // Passing classes into CUDA kernels is a bit of a pain; hence defined with namespaces.
 namespace SchwarzschildDevice
@@ -76,13 +84,13 @@ namespace SchwarzschildDevice
 };
 
 // CUDA kernels.
-__global__ void traceImage(
+__global__ void traceImageSchwarzschildKernel(
     unsigned int const d_cam_pixels[2],
     unsigned char *d_cam_pixel_array,
-    Real const &d_cam_fov_conv_factor,
+    Real const *d_cam_fov_conv_factor,
     Real d_cam_coords[8],
-    Real const &d_d_phi,
-    Real const &d_d_theta,
+    Real const *d_d_phi,
+    Real const *d_d_theta,
     int const d_sky_pixels[2],
     unsigned char *d_sky_map
 );

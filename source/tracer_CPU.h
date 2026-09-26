@@ -1,8 +1,8 @@
-#ifndef TRACER
-#define TRACER
+#ifndef TRACER_CPU
+#define TRACER_CPU
 
 #include "utilities/float_defn.h"
-#include "trace_kernel_utils.h"
+#include "trace_kernel_utils_CPU.h"
 
 /*
  *  Metrics are currently defined in coordinates of (ct, x, y, z)
@@ -16,24 +16,18 @@
 // h_ indicates a host-bound variable/pointer.
 // d_ indicates a device-bound variable/pointer.
 
-class Tracer
+class TracerCPU
 {
     public:
-        Tracer(
-            Real initial_pos[4],
-            Real initial_quat[4],
-            unsigned int cam_pixels[2],
-            Real cam_fov,
-            char skymap_file[]
-        );
-        ~Tracer();
+        TracerCPU(Real initial_pos[4], Real initial_quat[4], unsigned int cam_pixels[2], Real cam_fov, char skymap_file[]);
+        ~TracerCPU();
 
         // Setup functions.
         void importSkyMap(char skymap_file[]);
-        void setCameraCoords(Real const camera_pos[4], Real const camera_quat[4]);
+        void setCameraCoords(Real camera_pos[4], Real camera_quat[4]);
         void setCameraResFOV(unsigned int input_cam_pixels[2], Real fov_width);
 
-        void traceImageSchwarzschild();
+        void traceImage();
         void saveTracedImage(char output_path[]);
 
     private:
@@ -41,27 +35,21 @@ class Tracer
         int byte_depth;
         // Dimensions of the sky map in pixels (width, height).
         int sky_pixels[2];
-        int *d_sky_pixels;
         // Sky map is stored on the host and the device.
         // Unsigned char to represent unsigned 8-bit integers.
         unsigned char *sky_map { nullptr };
-        unsigned char *d_sky_map { nullptr };
         // Intervals between azimuthal and polar angles in radians.
         Real d_phi;
         Real d_theta;
-        Real *d_d_phi;
-        Real *d_d_theta;
         // Camera location and orientation.
-        Real cam_coords[8];
-        Real *d_cam_coords { nullptr };
+        Real cam_pos[4];
+        Real cam_quat[4];
         // Camera dimensions.
         unsigned int cam_pixels[2];
-        unsigned int *d_cam_pixels;
         unsigned char *cam_pixel_array { nullptr };
-        unsigned char *d_cam_pixel_array { nullptr };
-        size_t image_mem_size;
         Real cam_fov_conv_factor;
-        Real *d_cam_fov_conv_factor;
+
+        Schwarzschild metric;
 };
 
-#endif // TRACER
+#endif // TRACER_CPU

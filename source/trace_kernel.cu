@@ -1,5 +1,4 @@
 #include <iostream>
-#include <cmath>
 #include <omp.h>
 
 #include "utilities/float_defn.h"
@@ -7,9 +6,58 @@
 #include "trace_kernel_utils.h"
 
 __device__ Real
+rMagnitudeDev(Real const r[3])
+{
+    return norm3d(r[0], r[1], r[2]);
+}
+
+__device__ Real
+rInvMagnitudeDev(Real const r[3])
+{
+    return rnorm3d(r[0], r[1], r[2]);
+}
+
+__device__ Real
 rSquaredDev(Real const r[3])
 {
     return r[0]*r[0] + r[1]*r[1] + r[2]*r[2];
+}
+
+__device__ void crossProductDev(Real const u[3], Real const v[3], Real cross[3])
+{
+    cross[0] = u[1]*v[2] - u[2]*v[1];
+    cross[1] = u[2]*v[0] - u[0]*v[2];
+    cross[2] = u[0]*v[1] - u[1]*v[0];
+}
+
+// Calculate the Hamilton (quaternionic) product of two quaternions.
+__device__ void
+quatProductDev(Real const u[4], Real const v[4], Real result[4])
+{
+    result[0] = u[0]*v[0] - (u[1]*v[1] + u[2]*v[2] + u[3]*v[3]);
+    Real cross[3];
+    crossProductDev(&u[1], &v[1], cross);
+    #pragma unroll
+    for (int i { 1 }; i < 4; i++)
+    {
+        result[i] = u[0]*v[i] + v[0]*u[i] + cross[i-1];
+    }
+}
+
+// Rotates a 3D Cartesian vector, vec (a pure quaternion), by rotation_quat.
+// result will be the rotated vector represented as a pure quaternion.
+__device__ void
+rotateVecByQuatDev(Real vec[4], Real rotation_quat[4], Real result[4])
+{
+    // Assume that rotation_quat is normalised; checking isn't worth the cost.
+    Real rotation_quat_inverse[4];
+    rotation_quat_inverse[0] = rotation_quat[0];
+    rotation_quat_inverse[1] = -rotation_quat[1];
+    rotation_quat_inverse[2] = -rotation_quat[2];
+    rotation_quat_inverse[3] = -rotation_quat[3];
+    Real intermediate_result[4];
+    quatProductDev(vec, rotation_quat_inverse, intermediate_result);
+    quatProductDev(rotation_quat, intermediate_result, result);
 }
 
 // CUDA device functions for the Schwarzschild metric.
@@ -61,7 +109,7 @@ namespace SchwarzschildDevice
         unrotated_v[2] = sin(theta) * sin(phi);
         unrotated_v[3] = cos(theta);
         // Rotate to align with the camera's orientation in the global frame.
-        rotateVecByQuat(unrotated_v, cam_quat, v);
+        rotateVecByQuatDev(unrotated_v, cam_quat, v);
         // Modify the t-component to make the velocity null.
         makeVNull(v, g);
     }
@@ -228,123 +276,19 @@ namespace SchwarzschildDevice
     }
 };
 
-/*void traceImageRKF45(
-    Schwarzschild *metric,
-    unsigned int cam_pixels[2],
-    unsigned char *cam_pixel_array,
-    Real const &cam_fov_conv_factor,
-    Real cam_pos[4],
-    Real cam_quat[4],
-    Real const &d_phi,
-    Real const &d_theta,
-    int sky_pixels[2],
-    unsigned char *sky_map
-)
-{
-    Real const tolerance { metric->schwarzschildRadius() * 1e-5 };
-    unsigned int const num_pixels = cam_pixels[0] * cam_pixels[1];
-
-    #pragma omp parallel for
-    for (unsigned int i = 0; i < num_pixels; i++) {
-        unsigned int const pixel_x = i % cam_pixels[0];
-        unsigned int const pixel_y = i / cam_pixels[0];
-
-        // Store coordinates and velocity together.
-        // First 4 numbers are the 4-position, last 4 are the 4-velocity.
-        Real xv[8];
-        #pragma unroll
-        for (int mu { 0 }; mu < 4; mu++) {
-            xv[mu] = cam_pos[mu];
-        }
-
-        // Metric tensor.
-        Real g[4][4];
-
-        // Initial metric tensor and starting velocity.
-        metric->calculateMetric(xv, g);
-        metric->calculateStartV(
-            static_cast<Real>(pixel_x),
-            static_cast<Real>(pixel_y),
-            g,
-            &xv[4],
-            cam_pixels,
-            cam_quat,
-            cam_fov_conv_factor
-        );
-
-        // Pseudo-energy of the photon; acts as a conserved quantity
-        // used to evolve t.
-        // FIXME: Doesn't work at the event horizon.
-        Real const e = xv[4] * (1. - metric->schwarzschildRadius() / rMagnitude(&xv[1]));
-
-        // Get the angular momentum per unit mass (i.e. treat it as
-        // a classic, massive particle).
-        // "Mass" is a bit of a misnomer here, it's just |r x v|.
-        Real L[3];
-        crossProduct(&xv[1], &xv[5], L);
-        Real const h_squared = L[0] * L[0] + L[1] * L[1] + L[2] * L[2];
-
-        // Set initial step length; doesn't really matter much
-        // because it gets modified automatically.
-        Real dl { 1. };
-
-        // Main raytracing loop.
-        while (!metric->terminateRay(xv)) {
-            advanceRayRKF45(metric, &xv[0], &xv[4], e, h_squared, dl, tolerance);
-            if (i == 0) {
-                metric->calculateMetric(xv, g);
-                xv[4] = e / (1. - metric->schwarzschildRadius() / rMagnitude(&xv[1]));
-                std::cout << scalarProduct(&xv[4], g) << "\n";
-            }
-        }
-
-        // Use the velocity to take the photon to infinity and sample the sky box.
-        Real phi { std::atan2(xv[6], xv[5]) };
-        // Move into the range 0 to 2*pi if phi < 0.
-        phi += 2. * pi_host * (phi < 0.);
-        Real theta { std::acos(xv[7]) / (std::sqrt(xv[5] * xv[5] +
-                                                   xv[6] * xv[6] +
-                                                   xv[7] * xv[7]))};
-
-        // Convert to pixel locations on the sky map; floor the number.
-        // Phi goes anticlockwise, so 2.*pi - phi transforms it to stop
-        // the image using the wrong phi coordinates.
-        int sky_x { (int)((2. * pi_host - phi) / d_phi) };
-        int sky_y { (int)(theta / d_theta) };
-        // Address of the pixel RGB colour.
-        unsigned char *colour { &sky_map[3 * (sky_y * sky_pixels[0] + sky_x)] };
-        // Fallen into the photon sphere/black hole if true.
-        bool set_to_black = metric->setToBlack(&xv[0]);
-
-        // Write camera image.
-        // Some thread divergence may occur here in a GPU rewrite.
-        // TODO: Set pixels to black if they enter a black hole (when viewed from beyond the photon sphere).
-        unsigned int pixel_index { 3 * (pixel_y * cam_pixels[0] + pixel_x) };
-        #pragma unroll
-        for (unsigned int j = 0; j < 3; j++) {
-            if (!set_to_black) {
-                cam_pixel_array[pixel_index + j] = colour[j];
-            }
-            else {
-                cam_pixel_array[pixel_index + j] = 0;
-            }
-        }
-    }
-}*/
-
 // CUDA kernels.
 
 // Spacetime raytracing kernel. Should be called from a Tracer object.
 // Uses RKF45 (Runge-Kutta-Fehlberg adaptive step).
 // Modifies the array d_cam_pixel_array in place with the traced image.
 __global__ void
-traceImage(
+traceImageSchwarzschildKernel(
     unsigned int const d_cam_pixels[2],
     unsigned char *d_cam_pixel_array,
-    Real const &d_cam_fov_conv_factor,
+    Real const *d_cam_fov_conv_factor,
     Real d_cam_coords[8],
-    Real const &d_d_phi,
-    Real const &d_d_theta,
+    Real const *d_d_phi,
+    Real const *d_d_theta,
     int const d_sky_pixels[2],
     unsigned char *d_sky_map
 )
@@ -364,8 +308,8 @@ traceImage(
     // Metric tensor. Should be okay to keep this in registers (64 bytes).
     Real g[4][4];
 
-    unsigned int const pixel_x { blockIdx.x * blockDim.x + threadIdx.x };
-    unsigned int const pixel_y { blockIdx.y * blockDim.y + threadIdx.y };
+    auto const pixel_x { blockIdx.x * blockDim.x + threadIdx.x };
+    auto const pixel_y { blockIdx.y * blockDim.y + threadIdx.y };
 
     // If false, then the pixel is outside the image; ignore it.
     pixel_valid[threadIdx.x][threadIdx.y] = (pixel_x < d_cam_pixels[0]) && (pixel_y < d_cam_pixels[1]);
@@ -392,10 +336,8 @@ traceImage(
     SchwarzschildDevice::calculateMetric(xv, g);
     // Calculate ray starting velocity.
     SchwarzschildDevice::calculateStartV(static_cast<Real>(pixel_x), static_cast<Real>(pixel_y), g, &xv[4],
-        d_cam_pixels, &d_cam_coords[4], d_cam_fov_conv_factor);
+        d_cam_pixels, &d_cam_coords[4], *d_cam_fov_conv_factor);
 
-    // TEST: This might be unnecessary.
-    // Potential thread divergence due to Taylor expansions in calculateMetric and calculateStartV.
     __syncthreads();
 
     // Pseudo-energy of the photon; acts as a conserved quantity
@@ -407,7 +349,7 @@ traceImage(
     // a classic, massive particle).
     // "Mass" is a bit of a misnomer here, it's just |r x v|.
     Real L[3];
-    crossProduct(&xv[1], &xv[5], L);
+    crossProductDev(&xv[1], &xv[5], L);
     Real const h_squared = L[0]*L[0] + L[1]*L[1] + L[2]*L[2];
 
     // Set initial step length; it will probably be changed automatically.
@@ -452,8 +394,8 @@ traceImage(
     // Convert to pixel locations on the sky map; floor the number.
     // Phi goes anticlockwise, so 2.*pi - phi transforms it to stop
     // the image using the wrong phi coordinates.
-    unsigned int const sky_x { (unsigned int)((2. * pi_device - phi) / d_d_phi) };
-    unsigned int const sky_y { (unsigned int)(theta / d_d_theta) };
+    unsigned int const sky_x { (unsigned int)((2. * pi_device - phi) / *d_d_phi) };
+    unsigned int const sky_y { (unsigned int)(theta / *d_d_theta) };
     // Address of the pixel RGB colour.
     unsigned char const *colour { &d_sky_map[3 * (sky_y * d_sky_pixels[0] + sky_x)] };
 
@@ -462,12 +404,11 @@ traceImage(
     // here. Should be a very minor effect and avoidable entirely
     // with good choices of resolutions and kernel sizes.
     if (pixel_valid[threadIdx.x][threadIdx.y]) {
-        // TODO: Set pixels to black if they enter a black hole (when viewed from beyond the photon sphere..).
-        unsigned int const pixel_index { 3 * (pixel_y * d_cam_pixels[0] + pixel_x) };
+        auto const pixel_index { 3 * (pixel_y * d_cam_pixels[0] + pixel_x) };
         bool const set_to_black = SchwarzschildDevice::setToBlack(xv);
         #pragma unroll
         for (unsigned int i = 0; i < 3; i++) {
-            d_cam_pixel_array[pixel_index + i] = colour[i] * set_to_black;
+            d_cam_pixel_array[pixel_index + i] = colour[i] * !set_to_black;
         }
     }
 }
