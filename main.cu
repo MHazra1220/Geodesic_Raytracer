@@ -1,10 +1,10 @@
 #include "source/utilities/float_defn.h"
-#include "source/tracer.h"
-// #include "source/tracer_CPU.h"
+// #include "source/tracer.h"
+#include "source/tracer_CPU.h"
 
 #include <iostream>
 
-int main()
+int main(int argc, char *argv[])
 {
     // Path to the sky map. Should be a 2:1 aspect ratio image.
     // TODO: Make this a command-line argument. Remove it entirely and put it in a GUI of some sort later.
@@ -20,15 +20,15 @@ int main()
     Real cam_fov { 120. };
 
     // Path to output the image (for now). Want to create a "real-time" view later on.
-    char output_image_path[] { "/home/mh2001/Documents/Programming/General_Relativity/Geodesic_Raytracer/output_images/schwarzschild_test_f32_GPU.jpg" };
+    char output_image_path[] { "/home/mh2001/Documents/Programming/General_Relativity/Geodesic_Raytracer/output_images/schwarzschild_test_f32.jpg" };
 
-    // TracerCPU tracer_test_CPU { pos, quat, cam_pixels, cam_fov, sky_map };
-    // tracer_test_CPU.traceImage();
-    // tracer_test_CPU.saveTracedImage(output_image_path);
+    TracerCPU tracer_test_CPU { pos, quat, cam_pixels, cam_fov, sky_map };
+    tracer_test_CPU.traceImage();
+    tracer_test_CPU.saveTracedImage(output_image_path);
 
-    Tracer tracer_test_GPU { pos, quat, cam_pixels, cam_fov, sky_map };
-    tracer_test_GPU.traceImageSchwarzschild();
-    tracer_test_GPU.saveTracedImage(output_image_path);
+    // Tracer tracer_test_GPU { pos, quat, cam_pixels, cam_fov, sky_map };
+    // tracer_test_GPU.traceImageSchwarzschild();
+    // tracer_test_GPU.saveTracedImage(output_image_path);
 
     return 0;
 }

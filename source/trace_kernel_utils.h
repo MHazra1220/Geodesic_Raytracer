@@ -2,7 +2,6 @@
 #define TRACE_KERNEL_UTILS
 
 #include "utilities/float_defn.h"
-#include "utilities/math_functions.h"
 
 // I hate having so many things here, but CUDA doesn't like modularised code; it's easier
 // to put everything the raytracing kernel uses in a single place.
@@ -46,7 +45,7 @@ namespace SchwarzschildDevice
     // Assumed fixed for now.
     __device__ __constant__ Real s_radius { 1. };
     // Simulation terminates if a ray gets within inner_limit.
-    // TODO: The use of the Newtonian "magic" potential allows us to trace
+    // TODO: The use of the Newtonian "magic" forcefield allows us to trace
     // across the event horizon. We should be able to get images from inside
     // a black hole, in which case a different halting condition is needed.
     __device__ __constant__ Real inner_limit { 1.5 };
